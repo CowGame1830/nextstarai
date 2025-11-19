@@ -1,0 +1,258 @@
+{
+  "timestamp": "20251119_133015",
+  "detection_method": "Advanced OpenCV-based Jump Detection",
+  "players": {
+    "player_1": {
+      "player_id": 1,
+      "total_jumps": 3,
+      "max_jump_height_pixels": 25.505346679687477,
+      "final_state": 0
+    },
+    "player_2": {
+      "player_id": 2,
+      "total_jumps": 1,
+      "max_jump_height_pixels": 33.870068359374955,
+      "final_state": 2
+    },
+    "player_3": {
+      "player_id": 3,
+      "total_jumps": 1,
+      "max_jump_height_pixels": 34.1817626953125,
+      "final_state": 0
+    },
+    "player_4": {
+      "player_id": 4,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_5": {
+      "player_id": 5,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_6": {
+      "player_id": 6,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_7": {
+      "player_id": 7,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_8": {
+      "player_id": 8,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_9": {
+      "player_id": 9,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_10": {
+      "player_id": 10,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_11": {
+      "player_id": 11,
+      "total_jumps": 2,
+      "max_jump_height_pixels": 38.18809814453124,
+      "final_state": 0
+    },
+    "player_12": {
+      "player_id": 12,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_13": {
+      "player_id": 13,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_14": {
+      "player_id": 14,
+      "total_jumps": 1,
+      "max_jump_height_pixels": 55.890063476562545,
+      "final_state": 0
+    },
+    "player_15": {
+      "player_id": 15,
+      "total_jumps": 1,
+      "max_jump_height_pixels": 54.5682373046875,
+      "final_state": 0
+    },
+    "player_16": {
+      "player_id": 16,
+      "total_jumps": 2,
+      "max_jump_height_pixels": 57.29012451171877,
+      "final_state": 0
+    },
+    "player_27": {
+      "player_id": 27,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 1
+    },
+    "player_17": {
+      "player_id": 17,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_41": {
+      "player_id": 41,
+      "total_jumps": 1,
+      "max_jump_height_pixels": 19.25282592773442,
+      "final_state": 0
+    },
+    "player_52": {
+      "player_id": 52,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_61": {
+      "player_id": 61,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_62": {
+      "player_id": 62,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 41.36628723144531,
+      "final_state": 2
+    },
+    "player_68": {
+      "player_id": 68,
+      "total_jumps": 1,
+      "max_jump_height_pixels": 25.16326904296875,
+      "final_state": 0
+    },
+    "player_72": {
+      "player_id": 72,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_73": {
+      "player_id": 73,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 41.47320556640625,
+      "final_state": 2
+    },
+    "player_78": {
+      "player_id": 78,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_79": {
+      "player_id": 79,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_86": {
+      "player_id": 86,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_94": {
+      "player_id": 94,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 16.165612792968773,
+      "final_state": 3
+    },
+    "player_98": {
+      "player_id": 98,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_108": {
+      "player_id": 108,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_110": {
+      "player_id": 110,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_112": {
+      "player_id": 112,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_117": {
+      "player_id": 117,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_116": {
+      "player_id": 116,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_120": {
+      "player_id": 120,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_122": {
+      "player_id": 122,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_125": {
+      "player_id": 125,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_127": {
+      "player_id": 127,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_133": {
+      "player_id": 133,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_135": {
+      "player_id": 135,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    },
+    "player_136": {
+      "player_id": 136,
+      "total_jumps": 0,
+      "max_jump_height_pixels": 0.0,
+      "final_state": 0
+    }
+  }
+}
