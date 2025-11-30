@@ -14,6 +14,8 @@ class SpeedAndDistance_Estimator():
     def __init__(self):
         self.frame_window=5
         self.frame_rate=24
+        self.debug_speed = True
+        self.debug_log = {}  # Store debug data: {frame_num: {track_id: "equation = result"}}
         # Enhanced tracking for real-time stats
         self.player_positions_history = {}
         self.player_speeds_history = {}
@@ -73,7 +75,7 @@ class SpeedAndDistance_Estimator():
                     time_elapsed = (actual_end_frame-frame_num)/self.frame_rate
                     speed_meteres_per_second = distance_covered/time_elapsed
                     speed_km_per_hour = speed_meteres_per_second*3.6
-
+                    
                     if object not in total_distance:
                         total_distance[object]= {}
                     
@@ -98,6 +100,14 @@ class SpeedAndDistance_Estimator():
                         tracks[object][frame_num_batch][track_id]['stamina'] = self.player_stamina.get(track_id, 100)
                         tracks[object][frame_num_batch][track_id]['jump_count'] = len(self.player_jump_detection.get(track_id, []))
                         tracks[object][frame_num_batch][track_id]['status'] = self.player_status.get(track_id, 'waiting')
+
+                        # Store debug info for this frame
+                        if self.debug_speed:
+                            if frame_num_batch not in self.debug_log:
+                                self.debug_log[frame_num_batch] = {}
+                            equation = f"v = d/t = {distance_covered:.3f}m / {time_elapsed:.3f}s = {speed_meteres_per_second:.3f} m/s"
+                            result = f"{speed_km_per_hour:.3f} km/h"
+                            self.debug_log[frame_num_batch][track_id] = f"{equation} = {result}"
 
     def _update_player_stats(self, track_id, current_speed, distance_covered, start_pos, end_pos, frame_num):
         """Update enhanced player statistics"""
@@ -411,6 +421,42 @@ class SpeedAndDistance_Estimator():
             import traceback
             traceback.print_exc()
 
+    def save_speed_debug_log(self, output_dir="output_data"):
+        """Save speed calculation debug log to text file"""
+        from datetime import datetime
+        
+        if not self.debug_speed or not self.debug_log:
+            return None
+            
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{output_dir}/speed_debug_log_{timestamp}.txt"
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write("SPEED CALCULATION DEBUG LOG\n")
+            f.write("=" * 80 + "\n\n")
+            
+            # Sort frames in order
+            for frame_num in sorted(self.debug_log.keys()):
+                f.write(f"\n{'='*80}\n")
+                f.write(f"Frame {frame_num}\n")
+                f.write(f"{'='*80}\n")
+                
+                # Sort player IDs for consistent output
+                player_data = self.debug_log[frame_num]
+                for player_id in sorted(player_data.keys()):
+                    f.write(f"  Player ID {player_id}: {player_data[player_id]}\n")
+            
+            f.write(f"\n\n{'='*80}\n")
+            f.write("END OF DEBUG LOG\n")
+            f.write(f"{'='*80}\n")
+        
+        print(f"✅ Speed debug log saved to: {filename}")
+        return filename
+    
     def save_enhanced_stats_to_json(self, output_dir="output_data"):
         """Save enhanced player statistics to JSON file"""
         import json

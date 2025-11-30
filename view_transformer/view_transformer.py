@@ -6,10 +6,16 @@ class ViewTransformer():
         court_width = 68
         court_length = 23.32
 
-        self.pixel_vertices = np.array([[110, 1035], 
-                               [265, 275], 
-                               [910, 260], 
-                               [1640, 915]])
+        # self.pixel_vertices = np.array([[110, 1035], 
+        #                        [265, 275], 
+        #                     #    [910, 260], 
+        #                     #    [1640, 915]])
+        #                        [1100, 260], 
+        #                        [1920, 1000]])
+        self.pixel_vertices = np.array([[150, 1050], 
+                               [400, 300], 
+                               [1920, 250], 
+                               [1900, 1000]])
         
         self.target_vertices = np.array([
             [0,court_width],
@@ -28,10 +34,23 @@ class ViewTransformer():
         is_inside = cv2.pointPolygonTest(self.pixel_vertices,p,False) >= 0 
         if not is_inside:
             return None
-
-        reshaped_point = point.reshape(-1,1,2).astype(np.float32)
-        tranform_point = cv2.perspectiveTransform(reshaped_point,self.persepctive_trasnformer)
-        return tranform_point.reshape(-1,2)
+        # reshaped_point = point.reshape(-1,1,2).astype(np.float32)
+        # tranform_point = cv2.perspectiveTransform(reshaped_point,self.persepctive_trasnformer)
+        # result = tranform_point.reshape(-1,2)
+        try:
+            reshaped_point = point.reshape(-1,1,2).astype(np.float32)
+            tranform_point = cv2.perspectiveTransform(reshaped_point,self.persepctive_trasnformer)
+            result = tranform_point.reshape(-1,2)
+            
+            # Check for invalid values (NaN or Inf)
+            if np.isnan(result).any() or np.isinf(result).any():
+                print(f"[WARNING] Invalid transformation result: {result} for point {point}")
+                return None
+            
+            return result
+        except Exception as e:
+            print(f"[ERROR] Transform failed for point {point}: {e}")
+            return None
 
     def add_transformed_position_to_tracks(self,tracks):
         for object, object_tracks in tracks.items():

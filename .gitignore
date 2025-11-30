@@ -1,2 +1,10 @@
 *__pycahce__*
 *.pyc
+
+# Image and label folders
+image/
+label/
+output_data/
+output_videos/*.avi
+input_videos/*.mp4
+models/
