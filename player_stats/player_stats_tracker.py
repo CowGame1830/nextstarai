@@ -46,7 +46,8 @@ class PlayerStatsTracker:
                     
                     # Calculate current speed
                     if 'speed' in track_info:
-                        current_speed = track_info['speed'] * 3.6  # Convert m/s to km/h
+                        # track_info['speed'] is already in km/h from SpeedAndDistance_Estimator
+                        current_speed = float(track_info['speed'])
                         stats['speeds'].append(current_speed)
                         stats['current_speed'] = current_speed
                         stats['max_speed'] = max(stats['max_speed'], current_speed)
@@ -58,7 +59,8 @@ class PlayerStatsTracker:
                     
                     # Calculate distance
                     if 'distance' in track_info:
-                        stats['total_distance'] += track_info['distance']
+                        # track_info['distance'] is cumulative for the player.
+                        stats['total_distance'] = float(track_info['distance'])
                 
                 # Calculate acceleration
                 if len(stats['speeds']) >= 2:
@@ -178,23 +180,16 @@ class PlayerStatsTracker:
     def get_all_stats(self):
         """Get all player statistics"""
         return self.player_stats
-    
-    def save_stats_to_file(self, output_dir="output_data"):
-        """Save player statistics to JSON file"""
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-        # Create filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"player_stats_{timestamp}.json"
-        filepath = os.path.join(output_dir, filename)
-        
-        # Prepare data for JSON serialization
+
+    def build_stats_payload(self, timestamp=None):
+        """Build player statistics payload dictionary for export/aggregation."""
+        if timestamp is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
         stats_data = {}
         for player_id, stats in self.player_stats.items():
-            # Convert all types to standard Python types for JSON serialization
             clean_stats = {
-                'player_id': int(player_id),  # Convert numpy int64 to int
+                'player_id': int(player_id),
                 'total_distance_m': float(stats['total_distance']),
                 'max_speed_kmh': float(stats['max_speed']),
                 'avg_speed_kmh': float(stats['avg_speed']),
@@ -207,15 +202,61 @@ class PlayerStatsTracker:
                 'total_frames_tracked': int(stats['frame_count'])
             }
             stats_data[f'player_{int(player_id)}'] = clean_stats
-        
-        # Add summary statistics
+
         stats_data['match_summary'] = {
             'total_players': len(self.player_stats),
             'timestamp': timestamp,
             'analysis_duration_frames': max([stats['frame_count'] for stats in self.player_stats.values()]) if self.player_stats else 0
         }
+
+        return stats_data
+    
+    def save_stats_to_file(self, output_dir="output_data"):
+        """Save player statistics to JSON file"""
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
         
-        with open(filepath, 'w') as f:
+        # Create filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"player_stats_{timestamp}.json"
+        filepath = os.path.join(output_dir, filename)
+        
+        stats_data = self.build_stats_payload(timestamp=timestamp)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(stats_data, f, indent=2)
         
         return filepath
+
+    def save_player_stats_per_file(self, output_dir="output_data"):
+        """Save one JSON file per player and return file paths."""
+        player_dir = os.path.join(output_dir, "players")
+        if not os.path.exists(player_dir):
+            os.makedirs(player_dir)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_paths = []
+
+        for player_id, stats in self.player_stats.items():
+            player_payload = {
+                'player_id': int(player_id),
+                'timestamp': timestamp,
+                'total_distance_m': float(stats['total_distance']),
+                'max_speed_kmh': float(stats['max_speed']),
+                'avg_speed_kmh': float(stats['avg_speed']),
+                'sprint_speed_kmh': float(stats['sprint_speed']),
+                'max_acceleration': float(max(stats['accelerations']) if stats['accelerations'] else 0),
+                'jump_count': int(stats['jump_count']),
+                'stamina_percentage': float(stats['stamina_score']),
+                'sprint_time_seconds': float(stats['sprint_time']),
+                'total_frames_tracked': int(stats['frame_count'])
+            }
+
+            filename = f"player_{int(player_id)}_{timestamp}.json"
+            filepath = os.path.join(player_dir, filename)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(player_payload, f, indent=2)
+
+            file_paths.append(filepath)
+
+        return file_paths

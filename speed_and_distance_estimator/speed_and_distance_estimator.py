@@ -14,9 +14,12 @@ class SpeedAndDistance_Estimator():
     def __init__(self):
         self.frame_window=5
         self.frame_rate=24
+        self.speed_smoothing_alpha = 0.35
+        self.max_plausible_speed_kmh = 42.0
         # Enhanced tracking for real-time stats
         self.player_positions_history = {}
         self.player_speeds_history = {}
+        self.player_smoothed_speeds = {}
         self.player_accelerations = {}  # Maximum acceleration
         self.player_current_accelerations = {}  # Current acceleration
         self.player_jump_detection = {}
@@ -24,6 +27,7 @@ class SpeedAndDistance_Estimator():
         self.player_sprint_speeds = {}
         self.player_total_distances = {}
         self.player_status = {}  # Current player status (waiting/jogging/running/sprinting)
+        self.all_detected_player_ids = set()
         
         # Speed thresholds for status determination (km/h)
         self.status_thresholds = {
@@ -40,9 +44,73 @@ class SpeedAndDistance_Estimator():
     def set_video_frames(self, frames):
         """Store video frames for advanced jump detection processing"""
         self.video_frames = frames
+
+    def _ensure_player_initialized(self, track_id):
+        """Ensure all player stat containers exist for a track id."""
+        self.all_detected_player_ids.add(track_id)
+        if track_id not in self.player_speeds_history:
+            self.player_speeds_history[track_id] = []
+            self.player_smoothed_speeds[track_id] = 0
+            self.player_accelerations[track_id] = 0
+            self.player_current_accelerations[track_id] = 0
+            self.player_jump_detection[track_id] = []
+            self.player_stamina[track_id] = 100
+            self.player_sprint_speeds[track_id] = 0
+            self.player_total_distances[track_id] = 0
+            self.player_positions_history[track_id] = []
+            self.player_status[track_id] = 'waiting'
+
+    def _compute_window_speed(self, object_tracks, track_id, frame_num, last_frame):
+        """Compute speed from step-by-step path distance inside the window."""
+        valid_points = []
+        for idx in range(frame_num, last_frame + 1):
+            if track_id not in object_tracks[idx]:
+                continue
+            pt = object_tracks[idx][track_id].get('position_transformed')
+            if pt is None:
+                continue
+            valid_points.append((idx, pt))
+
+        if len(valid_points) < 2:
+            return None
+
+        distance_covered = 0.0
+        for i in range(1, len(valid_points)):
+            distance_covered += measure_distance(valid_points[i - 1][1], valid_points[i][1])
+
+        start_idx = valid_points[0][0]
+        end_idx = valid_points[-1][0]
+        if end_idx <= start_idx:
+            return None
+
+        time_elapsed = (end_idx - start_idx) / self.frame_rate
+        if time_elapsed <= 0:
+            return None
+
+        raw_speed_km_per_hour = (distance_covered / time_elapsed) * 3.6
+        clipped_speed_km_per_hour = min(raw_speed_km_per_hour, self.max_plausible_speed_kmh)
+
+        previous_smoothed = self.player_smoothed_speeds.get(track_id, clipped_speed_km_per_hour)
+        smoothed_speed_km_per_hour = (
+            self.speed_smoothing_alpha * clipped_speed_km_per_hour
+            + (1 - self.speed_smoothing_alpha) * previous_smoothed
+        )
+        self.player_smoothed_speeds[track_id] = smoothed_speed_km_per_hour
+
+        return {
+            'speed_kmh': smoothed_speed_km_per_hour,
+            'distance_m': distance_covered,
+            'start_idx': start_idx,
+            'end_idx': end_idx,
+        }
     
     def add_speed_and_distance_to_tracks(self,tracks):
         total_distance= {}
+
+        # Register all detected players first so they are always included in stats export.
+        for frame_players in tracks.get("players", []):
+            for track_id in frame_players.keys():
+                self._ensure_player_initialized(track_id)
 
         for object, object_tracks in tracks.items():
             if object == "ball" or object == "referees":
@@ -52,27 +120,19 @@ class SpeedAndDistance_Estimator():
                 last_frame = min(frame_num+self.frame_window,number_of_frames-1 )
 
                 for track_id,_ in object_tracks[frame_num].items():
-                    # Find the next frame where this player appears instead of strict last_frame
-                    actual_end_frame = None
-                    for check_frame in range(last_frame, frame_num, -1):  # Search backwards from last_frame
-                        if track_id in object_tracks[check_frame]:
-                            actual_end_frame = check_frame
-                            break
-                    
-                    # If player not found in any frame in the window, skip
-                    if actual_end_frame is None or actual_end_frame == frame_num:
+                    self._ensure_player_initialized(track_id)
+                    window_metrics = self._compute_window_speed(object_tracks, track_id, frame_num, last_frame)
+                    if window_metrics is None:
                         continue
 
-                    start_position = object_tracks[frame_num][track_id]['position_transformed']
-                    end_position = object_tracks[actual_end_frame][track_id]['position_transformed']
+                    distance_covered = window_metrics['distance_m']
+                    speed_km_per_hour = window_metrics['speed_kmh']
+                    start_idx = window_metrics['start_idx']
+                    end_idx = window_metrics['end_idx']
 
-                    if start_position is None or end_position is None:
-                        continue
-                    
-                    distance_covered = measure_distance(start_position,end_position)
-                    time_elapsed = (actual_end_frame-frame_num)/self.frame_rate
-                    speed_meteres_per_second = distance_covered/time_elapsed
-                    speed_km_per_hour = speed_meteres_per_second*3.6
+                    # Use first/last valid points in the window for acceleration/jump context.
+                    start_position = object_tracks[start_idx][track_id]['position_transformed']
+                    end_position = object_tracks[end_idx][track_id]['position_transformed']
 
                     if object not in total_distance:
                         total_distance[object]= {}
@@ -86,7 +146,7 @@ class SpeedAndDistance_Estimator():
                     self._update_player_stats(track_id, speed_km_per_hour, distance_covered, 
                                             start_position, end_position, frame_num)
 
-                    for frame_num_batch in range(frame_num,actual_end_frame+1):
+                    for frame_num_batch in range(start_idx, end_idx + 1):
                         if track_id not in tracks[object][frame_num_batch]:
                             continue
                         tracks[object][frame_num_batch][track_id]['speed'] = speed_km_per_hour
@@ -99,19 +159,30 @@ class SpeedAndDistance_Estimator():
                         tracks[object][frame_num_batch][track_id]['jump_count'] = len(self.player_jump_detection.get(track_id, []))
                         tracks[object][frame_num_batch][track_id]['status'] = self.player_status.get(track_id, 'waiting')
 
+        self._apply_default_stats_to_tracks(tracks)
+
+    def _apply_default_stats_to_tracks(self, tracks):
+        """Ensure every tracked player has complete stat fields in every visible frame."""
+        for object, object_tracks in tracks.items():
+            if object == "ball" or object == "referees":
+                continue
+
+            for frame_players in object_tracks:
+                for track_id, track_info in frame_players.items():
+                    self._ensure_player_initialized(track_id)
+                    track_info.setdefault('speed', 0.0)
+                    track_info.setdefault('distance', float(self.player_total_distances.get(track_id, 0.0)))
+                    track_info.setdefault('sprint_speed', float(self.player_sprint_speeds.get(track_id, 0.0)))
+                    track_info.setdefault('acceleration', float(self.player_current_accelerations.get(track_id, 0.0)))
+                    track_info.setdefault('max_acceleration', float(self.player_accelerations.get(track_id, 0.0)))
+                    track_info.setdefault('stamina', float(self.player_stamina.get(track_id, 100.0)))
+                    track_info.setdefault('jump_count', len(self.player_jump_detection.get(track_id, [])))
+                    track_info.setdefault('status', self.player_status.get(track_id, 'waiting'))
+
     def _update_player_stats(self, track_id, current_speed, distance_covered, start_pos, end_pos, frame_num):
         """Update enhanced player statistics"""
         # Initialize player data if not exists
-        if track_id not in self.player_speeds_history:
-            self.player_speeds_history[track_id] = []
-            self.player_accelerations[track_id] = 0  # Maximum acceleration
-            self.player_current_accelerations[track_id] = 0  # Current acceleration
-            self.player_jump_detection[track_id] = []
-            self.player_stamina[track_id] = 100
-            self.player_sprint_speeds[track_id] = 0
-            self.player_total_distances[track_id] = 0
-            self.player_positions_history[track_id] = []
-            self.player_status[track_id] = 'waiting'
+        self._ensure_player_initialized(track_id)
         
         # Update speed history
         self.player_speeds_history[track_id].append(current_speed)
@@ -423,8 +494,22 @@ class SpeedAndDistance_Estimator():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{output_dir}/enhanced_player_stats_{timestamp}.json"
         
+        stats_data = self.build_enhanced_stats_data()
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(stats_data, f, indent=2, ensure_ascii=False)
+        
+        return filename
+
+    def build_enhanced_stats_data(self, all_player_ids=None):
+        """Build enhanced player stats dictionary for export/aggregation."""
+        if all_player_ids is None:
+            all_player_ids = set(self.all_detected_player_ids)
+            all_player_ids.update(self.player_speeds_history.keys())
+            all_player_ids.update(self.player_total_distances.keys())
+
         stats_data = {}
-        for player_id in self.player_speeds_history.keys():
+        for player_id in sorted(all_player_ids):
             stats_data[f"player_{int(player_id)}"] = {
                 "player_id": int(player_id),
                 "max_speed_kmh": float(self.player_sprint_speeds.get(player_id, 0)),
@@ -437,8 +522,5 @@ class SpeedAndDistance_Estimator():
                 "speed_history": [float(s) for s in self.player_speeds_history.get(player_id, [])],
                 "jumps_detected": [(int(frame), float(height)) for frame, height in self.player_jump_detection.get(player_id, [])]
             }
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(stats_data, f, indent=2, ensure_ascii=False)
-        
-        return filename
+
+        return stats_data

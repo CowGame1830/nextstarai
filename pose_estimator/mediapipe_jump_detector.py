@@ -8,17 +8,21 @@ from datetime import datetime
 
 
 class MediaPipeJumpDetector:
-    def __init__(self, min_detection_confidence=0.5, min_tracking_confidence=0.5):
+    def __init__(self, min_detection_confidence=0.5, min_tracking_confidence=0.5, show_skeleton=True, show_ui=False):
         """
         Initialize MediaPipe Pose Detection for jump tracking
         
         Args:
             min_detection_confidence: Minimum confidence for pose detection
             min_tracking_confidence: Minimum confidence for pose tracking
+            show_skeleton: Whether to display skeleton/bone structure (default: True)
+            show_ui: Whether to display UI elements like text and indicators (default: False)
         """
         self.mp_pose = mp.solutions.pose
         self.mp_drawing = mp.solutions.drawing_utils
         self.mp_drawing_styles = mp.solutions.drawing_styles
+        self.show_skeleton = show_skeleton
+        self.show_ui = show_ui
         
         # Initialize pose detection
         self.pose = self.mp_pose.Pose(
@@ -103,7 +107,7 @@ class MediaPipeJumpDetector:
                 frame_poses[player_id] = {
                     'landmarks': landmarks,
                     'bbox': bbox,
-                    'pose_landmarks': results.pose_landmarks  # Keep original for drawing
+                    'crop_offset': (x1, y1, x2, y2)  # Store crop coordinates for manual drawing
                 }
         
         return frame_poses
@@ -380,65 +384,96 @@ class MediaPipeJumpDetector:
         landmarks = pose_data['landmarks']
         bbox = pose_data['bbox']
         
-        # Draw key pose points
-        if landmarks and len(landmarks) > 28:
-            # Draw ankle points
-            for ankle_idx in [27, 28]:  # Left and right ankle
-                if ankle_idx < len(landmarks):
-                    ankle = landmarks[ankle_idx]
-                    cv2.circle(frame, (int(ankle['x']), int(ankle['y'])), 5, (0, 255, 0), -1)
+        # Draw full skeleton manually if enabled
+        if self.show_skeleton and landmarks and len(landmarks) > 32:
+            # Define MediaPipe pose connections (body skeleton structure)
+            connections = [
+                # Face
+                (0, 1), (1, 2), (2, 3), (3, 7),
+                (0, 4), (4, 5), (5, 6), (6, 8),
+                # Upper body
+                (9, 10),  # Mouth
+                (11, 12),  # Shoulders
+                (11, 13), (13, 15), (15, 17), (15, 19), (15, 21),  # Right arm
+                (12, 14), (14, 16), (16, 18), (16, 20), (16, 22),  # Left arm
+                (11, 23), (12, 24),  # Torso
+                (23, 24),  # Hips
+                # Lower body
+                (23, 25), (25, 27), (27, 29), (27, 31),  # Right leg
+                (24, 26), (26, 28), (28, 30), (28, 32),  # Left leg
+            ]
             
-            # Draw hip points
-            for hip_idx in [23, 24]:  # Left and right hip
-                if hip_idx < len(landmarks):
-                    hip = landmarks[hip_idx]
-                    cv2.circle(frame, (int(hip['x']), int(hip['y'])), 5, (255, 0, 0), -1)
+            # Draw connections (bones)
+            for connection in connections:
+                start_idx, end_idx = connection
+                if start_idx < len(landmarks) and end_idx < len(landmarks):
+                    start = landmarks[start_idx]
+                    end = landmarks[end_idx]
+                    
+                    # Check visibility threshold
+                    if start.get('visibility', 0) > 0.5 and end.get('visibility', 0) > 0.5:
+                        cv2.line(frame, 
+                                (int(start['x']), int(start['y'])), 
+                                (int(end['x']), int(end['y'])), 
+                                (255, 255, 255), 2)  # White lines
             
-            # Draw knee points
-            for knee_idx in [25, 26]:  # Left and right knee
-                if knee_idx < len(landmarks):
-                    knee = landmarks[knee_idx]
-                    cv2.circle(frame, (int(knee['x']), int(knee['y'])), 4, (0, 0, 255), -1)
+            # Draw keypoints
+            for idx, landmark in enumerate(landmarks):
+                if landmark.get('visibility', 0) > 0.5:
+                    # Color code different body parts
+                    if idx <= 10:  # Face
+                        color = (0, 255, 255)  # Cyan
+                    elif idx <= 16:  # Arms
+                        color = (0, 255, 0)  # Green
+                    elif idx <= 24:  # Torso
+                        color = (255, 0, 0)  # Blue
+                    else:  # Legs
+                        color = (0, 165, 255)  # Orange
+                    
+                    cv2.circle(frame, 
+                              (int(landmark['x']), int(landmark['y'])), 
+                              4, color, -1)
         
-        # Draw jump status
-        x1, y1, x2, y2 = map(int, bbox)
-        
-        # Jump status text
-        jump_phase = jump_info.get('jump_phase', 'unknown')
-        jump_height = jump_info.get('jump_height', 0)
-        is_jumping = jump_info.get('is_jumping', False)
-        
-        # Color coding for jump phases
-        colors = {
-            'ground': (255, 255, 255),      # White
-            'takeoff': (0, 255, 255),       # Cyan
-            'airborne': (0, 0, 255),        # Red
-            'landing': (255, 0, 255),       # Magenta
-            'unknown': (128, 128, 128)      # Gray
-        }
-        
-        color = colors.get(jump_phase, (128, 128, 128))
-        
-        # Jump indicator
-        if is_jumping:
-            # Draw jump indicator above player
-            cv2.circle(frame, (int((x1 + x2) / 2), y1 - 20), 8, (0, 0, 255), -1)
-            cv2.putText(frame, "JUMP!", (x1, y1 - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        
-        # Jump stats text below player
-        stats_y = y2 + 15
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.4
-        
-        # Jump count and height
-        cv2.putText(frame, f"Jumps: {self.player_jump_counts.get(player_id, 0)}", 
-                   (x1, stats_y), font, font_scale, color, 1)
-        
-        cv2.putText(frame, f"Height: {jump_height:.1f}px", 
-                   (x1, stats_y + 15), font, font_scale, color, 1)
-        
-        cv2.putText(frame, f"Phase: {jump_phase}", 
-                   (x1, stats_y + 30), font, font_scale, color, 1)
+        # Only draw UI elements if enabled
+        if self.show_ui:
+            x1, y1, x2, y2 = map(int, bbox)
+            
+            # Jump status text
+            jump_phase = jump_info.get('jump_phase', 'unknown')
+            jump_height = jump_info.get('jump_height', 0)
+            is_jumping = jump_info.get('is_jumping', False)
+            
+            # Color coding for jump phases
+            colors = {
+                'ground': (255, 255, 255),      # White
+                'takeoff': (0, 255, 255),       # Cyan
+                'airborne': (0, 0, 255),        # Red
+                'landing': (255, 0, 255),       # Magenta
+                'unknown': (128, 128, 128)      # Gray
+            }
+            
+            color = colors.get(jump_phase, (128, 128, 128))
+            
+            # Jump indicator
+            if is_jumping:
+                # Draw jump indicator above player
+                cv2.circle(frame, (int((x1 + x2) / 2), y1 - 20), 8, (0, 0, 255), -1)
+                cv2.putText(frame, "JUMP!", (x1, y1 - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            
+            # Jump stats text below player
+            stats_y = y2 + 15
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.4
+            
+            # Jump count and height
+            cv2.putText(frame, f"Jumps: {self.player_jump_counts.get(player_id, 0)}", 
+                       (x1, stats_y), font, font_scale, color, 1)
+            
+            cv2.putText(frame, f"Height: {jump_height:.1f}px", 
+                       (x1, stats_y + 15), font, font_scale, color, 1)
+            
+            cv2.putText(frame, f"Phase: {jump_phase}", 
+                       (x1, stats_y + 30), font, font_scale, color, 1)
         
         return frame
     

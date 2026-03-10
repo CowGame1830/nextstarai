@@ -14,6 +14,112 @@ class Tracker:
         self.model = YOLO(model_path) 
         self.tracker = sv.ByteTrack()
 
+    def _bbox_iou(self, box_a, box_b):
+        ax1, ay1, ax2, ay2 = box_a
+        bx1, by1, bx2, by2 = box_b
+
+        inter_x1 = max(ax1, bx1)
+        inter_y1 = max(ay1, by1)
+        inter_x2 = min(ax2, bx2)
+        inter_y2 = min(ay2, by2)
+
+        inter_w = max(0.0, inter_x2 - inter_x1)
+        inter_h = max(0.0, inter_y2 - inter_y1)
+        inter_area = inter_w * inter_h
+
+        area_a = max(0.0, (ax2 - ax1)) * max(0.0, (ay2 - ay1))
+        area_b = max(0.0, (bx2 - bx1)) * max(0.0, (by2 - by1))
+        union = area_a + area_b - inter_area
+
+        if union <= 0:
+            return 0.0
+        return inter_area / union
+
+    def _bbox_motion_score(self, prev_box, curr_box):
+        prev_cx, prev_cy = get_center_of_bbox(prev_box)
+        curr_cx, curr_cy = get_center_of_bbox(curr_box)
+
+        prev_w = max(1.0, prev_box[2] - prev_box[0])
+        prev_h = max(1.0, prev_box[3] - prev_box[1])
+        curr_w = max(1.0, curr_box[2] - curr_box[0])
+        curr_h = max(1.0, curr_box[3] - curr_box[1])
+
+        scale = max(prev_w, prev_h, curr_w, curr_h)
+        center_dist = np.hypot(curr_cx - prev_cx, curr_cy - prev_cy)
+
+        # Convert distance to a [0,1] similarity score.
+        return max(0.0, 1.0 - (center_dist / (scale * 2.5)))
+
+    def stabilize_player_ids(self, tracks, max_gap=12, match_threshold=0.25):
+        """Reduce short-term ID switches by remapping per-frame raw IDs to stable IDs."""
+        if "players" not in tracks:
+            return tracks
+
+        stable_next_id = 1
+        stable_memory = {}  # stable_id -> {'bbox': [...], 'last_frame': int}
+        raw_to_stable_recent = {}  # raw_id -> {'stable_id': int, 'last_frame': int}
+
+        for frame_num, frame_players in enumerate(tracks["players"]):
+            remapped_players = {}
+            used_stable_ids = set()
+
+            for raw_id, info in frame_players.items():
+                curr_box = info.get("bbox")
+                if curr_box is None:
+                    continue
+
+                best_stable = None
+                best_score = -1.0
+
+                # Fast path: keep previous raw->stable mapping if still plausible.
+                prev_map = raw_to_stable_recent.get(raw_id)
+                if prev_map is not None:
+                    stable_id = prev_map["stable_id"]
+                    if stable_id in stable_memory and stable_id not in used_stable_ids:
+                        mem = stable_memory[stable_id]
+                        if frame_num - mem["last_frame"] <= max_gap:
+                            iou = self._bbox_iou(mem["bbox"], curr_box)
+                            motion = self._bbox_motion_score(mem["bbox"], curr_box)
+                            score = 0.7 * iou + 0.3 * motion
+                            if score >= match_threshold * 0.8:
+                                best_stable = stable_id
+                                best_score = score
+
+                # Normal matching path against all recent stable IDs.
+                if best_stable is None:
+                    for stable_id, mem in stable_memory.items():
+                        if stable_id in used_stable_ids:
+                            continue
+                        if frame_num - mem["last_frame"] > max_gap:
+                            continue
+
+                        iou = self._bbox_iou(mem["bbox"], curr_box)
+                        motion = self._bbox_motion_score(mem["bbox"], curr_box)
+                        score = 0.7 * iou + 0.3 * motion
+
+                        if score > best_score:
+                            best_score = score
+                            best_stable = stable_id
+
+                    if best_stable is not None and best_score < match_threshold:
+                        best_stable = None
+
+                if best_stable is None:
+                    best_stable = stable_next_id
+                    stable_next_id += 1
+
+                merged_info = dict(info)
+                merged_info["raw_track_id"] = int(raw_id)
+                remapped_players[best_stable] = merged_info
+
+                used_stable_ids.add(best_stable)
+                stable_memory[best_stable] = {"bbox": curr_box, "last_frame": frame_num}
+                raw_to_stable_recent[raw_id] = {"stable_id": best_stable, "last_frame": frame_num}
+
+            tracks["players"][frame_num] = remapped_players
+
+        return tracks
+
     def add_position_to_tracks(sekf,tracks):
         for object, object_tracks in tracks.items():
             for frame_num, track in enumerate(object_tracks):

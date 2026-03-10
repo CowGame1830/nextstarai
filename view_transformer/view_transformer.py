@@ -6,10 +6,10 @@ class ViewTransformer():
         court_width = 68
         court_length = 23.32
 
-        self.pixel_vertices = np.array([[110, 1035], 
-                               [265, 275], 
-                               [910, 260], 
-                               [1640, 915]])
+        self.pixel_vertices = np.array([[70, 1070], 
+                       [230, 245], 
+                       [1835, 235], 
+                       [1910, 1035]])
         
         self.target_vertices = np.array([
             [0,court_width],
