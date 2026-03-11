@@ -1,0 +1,23 @@
+# football_analysis environment
+# Recommended Python: 3.13.x
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Core ML stack (pinned to known working versions)
+torch==2.6.0+cpu
+torchvision==0.21.0+cpu
+torchaudio==2.6.0+cpu
+ultralytics==8.4.21
+
+# Computer vision and tracking
+opencv-python==4.13.0.92
+supervision==0.27.0.post1
+mediapipe==0.10.32
+
+# Data processing and analytics
+numpy==2.3.5
+scipy==1.17.1
+pandas==3.0.1
+scikit-learn==1.8.0
+polars==1.38.1
+psutil==7.2.2
