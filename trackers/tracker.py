@@ -5,14 +5,30 @@ import os
 import numpy as np
 import pandas as pd
 import cv2
+from scipy.optimize import linear_sum_assignment
 import sys 
 sys.path.append('../')
 from utils import get_center_of_bbox, get_bbox_width, get_foot_position
 
 class Tracker:
-    def __init__(self, model_path):
-        self.model = YOLO(model_path) 
-        self.tracker = sv.ByteTrack()
+    def __init__(self, model_path, frame_rate=24, detection_conf=0.1, imgsz=1280, batch_size=20):
+        self.model = YOLO(model_path)
+        self.frame_rate = frame_rate
+        self.detection_conf = float(detection_conf)
+        self.imgsz = int(imgsz)
+        self.batch_size = int(batch_size)
+
+        # Configure ByteTrack for stronger ID persistence under short occlusions.
+        try:
+            self.tracker = sv.ByteTrack(
+                track_activation_threshold=0.2,
+                minimum_matching_threshold=0.75,
+                lost_track_buffer=60,
+                frame_rate=frame_rate,
+            )
+        except TypeError:
+            # Fallback for older/newer supervision signatures.
+            self.tracker = sv.ByteTrack()
 
     def _bbox_iou(self, box_a, box_b):
         ax1, ay1, ax2, ay2 = box_a
@@ -50,71 +66,147 @@ class Tracker:
         # Convert distance to a [0,1] similarity score.
         return max(0.0, 1.0 - (center_dist / (scale * 2.5)))
 
-    def stabilize_player_ids(self, tracks, max_gap=12, match_threshold=0.25):
-        """Reduce short-term ID switches by remapping per-frame raw IDs to stable IDs."""
+    def _bbox_size_similarity(self, box_a, box_b):
+        aw = max(1.0, box_a[2] - box_a[0])
+        ah = max(1.0, box_a[3] - box_a[1])
+        bw = max(1.0, box_b[2] - box_b[0])
+        bh = max(1.0, box_b[3] - box_b[1])
+        width_score = min(aw, bw) / max(aw, bw)
+        height_score = min(ah, bh) / max(ah, bh)
+        return 0.5 * (width_score + height_score)
+
+    def _predict_bbox(self, memory_item):
+        bbox = memory_item["bbox"]
+        velocity = memory_item.get("velocity", (0.0, 0.0))
+        vx, vy = velocity
+        return [bbox[0] + vx, bbox[1] + vy, bbox[2] + vx, bbox[3] + vy]
+
+    def _match_score(self, predicted_bbox, current_bbox):
+        iou = self._bbox_iou(predicted_bbox, current_bbox)
+        motion = self._bbox_motion_score(predicted_bbox, current_bbox)
+        size = self._bbox_size_similarity(predicted_bbox, current_bbox)
+        return 0.50 * iou + 0.30 * motion + 0.20 * size
+
+    def _ball_shape_score(self, bbox):
+        width = max(1.0, bbox[2] - bbox[0])
+        height = max(1.0, bbox[3] - bbox[1])
+        ratio = width / height
+        return max(0.0, 1.0 - abs(1.0 - ratio))
+
+    def _pick_ball_candidate(self, candidate_boxes, candidate_scores, previous_ball_bbox=None):
+        if len(candidate_boxes) == 0:
+            return None
+
+        best_idx = 0
+        best_score = -1.0
+        for idx, (bbox, conf) in enumerate(zip(candidate_boxes, candidate_scores)):
+            shape_score = self._ball_shape_score(bbox)
+            if previous_ball_bbox is None:
+                score = 0.70 * float(conf) + 0.30 * shape_score
+            else:
+                motion_score = self._bbox_motion_score(previous_ball_bbox, bbox)
+                score = 0.55 * float(conf) + 0.20 * shape_score + 0.25 * motion_score
+
+            if score > best_score:
+                best_score = score
+                best_idx = idx
+
+        return candidate_boxes[best_idx]
+
+    def stabilize_player_ids(self, tracks, max_gap=18, match_threshold=0.28):
+        """Reduce ID switches by globally matching current players to stable memory."""
         if "players" not in tracks:
             return tracks
 
         stable_next_id = 1
-        stable_memory = {}  # stable_id -> {'bbox': [...], 'last_frame': int}
+        stable_memory = {}  # stable_id -> {'bbox': [...], 'last_frame': int, 'velocity': (vx, vy)}
         raw_to_stable_recent = {}  # raw_id -> {'stable_id': int, 'last_frame': int}
 
         for frame_num, frame_players in enumerate(tracks["players"]):
             remapped_players = {}
-            used_stable_ids = set()
 
+            current_items = []
             for raw_id, info in frame_players.items():
                 curr_box = info.get("bbox")
                 if curr_box is None:
                     continue
+                current_items.append((int(raw_id), curr_box, info))
 
-                best_stable = None
-                best_score = -1.0
+            # Keep only recently seen stable tracks.
+            candidate_stable_ids = [
+                sid for sid, mem in stable_memory.items()
+                if frame_num - mem["last_frame"] <= max_gap
+            ]
 
-                # Fast path: keep previous raw->stable mapping if still plausible.
-                prev_map = raw_to_stable_recent.get(raw_id)
-                if prev_map is not None:
-                    stable_id = prev_map["stable_id"]
-                    if stable_id in stable_memory and stable_id not in used_stable_ids:
+            assigned_current_indices = set()
+            if current_items and candidate_stable_ids:
+                score_matrix = np.zeros((len(current_items), len(candidate_stable_ids)), dtype=np.float32)
+
+                for i, (raw_id, curr_box, _) in enumerate(current_items):
+                    prev_map = raw_to_stable_recent.get(raw_id)
+
+                    for j, stable_id in enumerate(candidate_stable_ids):
                         mem = stable_memory[stable_id]
-                        if frame_num - mem["last_frame"] <= max_gap:
-                            iou = self._bbox_iou(mem["bbox"], curr_box)
-                            motion = self._bbox_motion_score(mem["bbox"], curr_box)
-                            score = 0.7 * iou + 0.3 * motion
-                            if score >= match_threshold * 0.8:
-                                best_stable = stable_id
-                                best_score = score
+                        predicted_bbox = self._predict_bbox(mem)
+                        score = self._match_score(predicted_bbox, curr_box)
 
-                # Normal matching path against all recent stable IDs.
-                if best_stable is None:
-                    for stable_id, mem in stable_memory.items():
-                        if stable_id in used_stable_ids:
-                            continue
-                        if frame_num - mem["last_frame"] > max_gap:
-                            continue
+                        age = frame_num - mem["last_frame"]
+                        age_penalty = min(0.20, 0.02 * age)
+                        score -= age_penalty
 
-                        iou = self._bbox_iou(mem["bbox"], curr_box)
-                        motion = self._bbox_motion_score(mem["bbox"], curr_box)
-                        score = 0.7 * iou + 0.3 * motion
+                        # Identity inertia: prefer existing raw->stable mapping if still plausible.
+                        if prev_map is not None and prev_map["stable_id"] == stable_id:
+                            score += 0.08
 
-                        if score > best_score:
-                            best_score = score
-                            best_stable = stable_id
+                        score_matrix[i, j] = score
 
-                    if best_stable is not None and best_score < match_threshold:
-                        best_stable = None
+                row_ind, col_ind = linear_sum_assignment(-score_matrix)
 
-                if best_stable is None:
-                    best_stable = stable_next_id
-                    stable_next_id += 1
+                for i, j in zip(row_ind, col_ind):
+                    score = float(score_matrix[i, j])
+                    if score < match_threshold:
+                        continue
+
+                    raw_id, curr_box, info = current_items[i]
+                    stable_id = candidate_stable_ids[j]
+                    mem = stable_memory[stable_id]
+
+                    prev_center = get_center_of_bbox(mem["bbox"])
+                    curr_center = get_center_of_bbox(curr_box)
+                    vx = float(curr_center[0] - prev_center[0])
+                    vy = float(curr_center[1] - prev_center[1])
+
+                    merged_info = dict(info)
+                    merged_info["raw_track_id"] = int(raw_id)
+                    remapped_players[stable_id] = merged_info
+
+                    stable_memory[stable_id] = {
+                        "bbox": curr_box,
+                        "last_frame": frame_num,
+                        "velocity": (vx, vy),
+                    }
+                    raw_to_stable_recent[raw_id] = {"stable_id": stable_id, "last_frame": frame_num}
+
+                    assigned_current_indices.add(i)
+
+            # Unmatched detections become new stable IDs.
+            for i, (raw_id, curr_box, info) in enumerate(current_items):
+                if i in assigned_current_indices:
+                    continue
+
+                stable_id = stable_next_id
+                stable_next_id += 1
 
                 merged_info = dict(info)
                 merged_info["raw_track_id"] = int(raw_id)
-                remapped_players[best_stable] = merged_info
+                remapped_players[stable_id] = merged_info
 
-                used_stable_ids.add(best_stable)
-                stable_memory[best_stable] = {"bbox": curr_box, "last_frame": frame_num}
-                raw_to_stable_recent[raw_id] = {"stable_id": best_stable, "last_frame": frame_num}
+                stable_memory[stable_id] = {
+                    "bbox": curr_box,
+                    "last_frame": frame_num,
+                    "velocity": (0.0, 0.0),
+                }
+                raw_to_stable_recent[raw_id] = {"stable_id": stable_id, "last_frame": frame_num}
 
             tracks["players"][frame_num] = remapped_players
 
@@ -144,10 +236,14 @@ class Tracker:
         return ball_positions
 
     def detect_frames(self, frames):
-        batch_size=20 
-        detections = [] 
-        for i in range(0,len(frames),batch_size):
-            detections_batch = self.model.predict(frames[i:i+batch_size],conf=0.1)
+        detections = []
+        for i in range(0, len(frames), self.batch_size):
+            detections_batch = self.model.predict(
+                frames[i:i + self.batch_size],
+                conf=self.detection_conf,
+                imgsz=self.imgsz,
+                verbose=False,
+            )
             detections += detections_batch
         return detections
 
@@ -165,6 +261,8 @@ class Tracker:
             "referees":[],
             "ball":[]
         }
+
+        previous_ball_bbox = None
 
         for frame_num, detection in enumerate(detections):
             cls_names = detection.names
@@ -196,12 +294,22 @@ class Tracker:
                 if cls_id == cls_names_inv['referee']:
                     tracks["referees"][frame_num][track_id] = {"bbox":bbox}
             
-            for frame_detection in detection_supervision:
-                bbox = frame_detection[0].tolist()
-                cls_id = frame_detection[3]
+            ball_class_id = cls_names_inv.get('ball')
+            if ball_class_id is not None and detection_supervision.class_id is not None:
+                class_ids = detection_supervision.class_id
+                confidence = detection_supervision.confidence
+                boxes = detection_supervision.xyxy
 
-                if cls_id == cls_names_inv['ball']:
-                    tracks["ball"][frame_num][1] = {"bbox":bbox}
+                ball_mask = class_ids == ball_class_id
+                if np.any(ball_mask):
+                    ball_boxes = boxes[ball_mask]
+                    ball_scores = confidence[ball_mask]
+                    selected_ball = self._pick_ball_candidate(ball_boxes, ball_scores, previous_ball_bbox)
+
+                    if selected_ball is not None:
+                        selected_ball = selected_ball.tolist()
+                        tracks["ball"][frame_num][1] = {"bbox": selected_ball}
+                        previous_ball_bbox = selected_ball
 
         if stub_path is not None:
             with open(stub_path,'wb') as f:
@@ -281,8 +389,13 @@ class Tracker:
         # Get the number of time each team had ball control
         team_1_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==1].shape[0]
         team_2_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==2].shape[0]
-        team_1 = team_1_num_frames/(team_1_num_frames+team_2_num_frames)
-        team_2 = team_2_num_frames/(team_1_num_frames+team_2_num_frames)
+        total_frames = team_1_num_frames + team_2_num_frames
+        if total_frames == 0:
+            team_1 = 0.0
+            team_2 = 0.0
+        else:
+            team_1 = team_1_num_frames/total_frames
+            team_2 = team_2_num_frames/total_frames
 
         cv2.putText(frame, f"Team 1 Ball Control: {team_1*100:.2f}%",(1400,900), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 3)
         cv2.putText(frame, f"Team 2 Ball Control: {team_2*100:.2f}%",(1400,950), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 3)
