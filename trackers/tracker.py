@@ -10,13 +10,20 @@ import sys
 sys.path.append('../')
 from utils import get_center_of_bbox, get_bbox_width, get_foot_position
 
+# NMS imports
+try:
+    from torchvision.ops import nms
+except ImportError:
+    nms = None
+
 class Tracker:
-    def __init__(self, model_path, frame_rate=24, detection_conf=0.1, imgsz=1280, batch_size=20):
+    def __init__(self, model_path, frame_rate=24, detection_conf=0.1, imgsz=1280, batch_size=20, nms_threshold=0.5):
         self.model = YOLO(model_path)
         self.frame_rate = frame_rate
         self.detection_conf = float(detection_conf)
         self.imgsz = int(imgsz)
         self.batch_size = int(batch_size)
+        self.nms_threshold = float(nms_threshold)  # IoU threshold for NMS
 
         # Configure ByteTrack for stronger ID persistence under short occlusions.
         try:
@@ -29,6 +36,87 @@ class Tracker:
         except TypeError:
             # Fallback for older/newer supervision signatures.
             self.tracker = sv.ByteTrack()
+
+    def _custom_nms(self, boxes, scores, iou_threshold=0.5):
+        """Custom NMS implementation using IoU calculation.
+        
+        Args:
+            boxes: Array of bounding boxes [N, 4] in format [x1, y1, x2, y2]
+            scores: Array of confidence scores [N]
+            iou_threshold: IoU threshold for suppression
+            
+        Returns:
+            keep_indices: Indices of boxes to keep after NMS
+        """
+        if len(boxes) == 0:
+            return np.array([], dtype=np.int32)
+        
+        # Sort by confidence score in descending order
+        sorted_indices = np.argsort(-scores)
+        keep_indices = []
+        
+        while len(sorted_indices) > 0:
+            # Keep the box with highest confidence
+            current_idx = sorted_indices[0]
+            keep_indices.append(current_idx)
+            
+            if len(sorted_indices) == 1:
+                break
+            
+            # Calculate IoU with remaining boxes
+            current_box = boxes[current_idx]
+            remaining_boxes = boxes[sorted_indices[1:]]
+            
+            iou_scores = np.array([
+                self._bbox_iou(current_box, box) 
+                for box in remaining_boxes
+            ])
+            
+            # Keep only boxes with IoU below threshold
+            keep_mask = iou_scores < iou_threshold
+            sorted_indices = sorted_indices[1:][keep_mask]
+        
+        return np.array(keep_indices, dtype=np.int32)
+
+    def _apply_nms_to_detections(self, detection_supervision, iou_threshold=None):
+        """Apply NMS to supervision detections to remove duplicates.
+        
+        Args:
+            detection_supervision: Supervision Detections object
+            iou_threshold: IoU threshold (uses self.nms_threshold if None)
+            
+        Returns:
+            Filtered detections
+        """
+        if iou_threshold is None:
+            iou_threshold = self.nms_threshold
+        
+        if detection_supervision.xyxy is None or len(detection_supervision.xyxy) == 0:
+            return detection_supervision
+        
+        boxes = detection_supervision.xyxy
+        scores = detection_supervision.confidence if detection_supervision.confidence is not None else np.ones(len(boxes))
+        
+        # Try using torchvision NMS if available
+        if nms is not None:
+            try:
+                import torch
+                boxes_tensor = torch.from_numpy(boxes).float()
+                scores_tensor = torch.from_numpy(scores).float()
+                keep_indices = nms(boxes_tensor, scores_tensor, iou_threshold).numpy()
+            except Exception as e:
+                print(f"Warning: Torchvision NMS failed ({e}), using custom NMS")
+                keep_indices = self._custom_nms(boxes, scores, iou_threshold)
+        else:
+            # Fallback to custom NMS implementation
+            keep_indices = self._custom_nms(boxes, scores, iou_threshold)
+        
+        # Filter detections
+        if len(keep_indices) < len(boxes):
+            filtered_detections = detection_supervision[keep_indices]
+            return filtered_detections
+        
+        return detection_supervision
 
     def _bbox_iou(self, box_a, box_b):
         ax1, ay1, ax2, ay2 = box_a
@@ -270,6 +358,9 @@ class Tracker:
 
             # Covert to supervision Detection format
             detection_supervision = sv.Detections.from_ultralytics(detection)
+
+            # Apply NMS to remove duplicate bounding boxes
+            detection_supervision = self._apply_nms_to_detections(detection_supervision, self.nms_threshold)
 
             # Convert GoalKeeper to player object
             for object_ind , class_id in enumerate(detection_supervision.class_id):

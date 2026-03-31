@@ -15,418 +15,28 @@ import json
 from datetime import datetime
 import argparse
 
-try:
-    import orjson
-except ImportError:
-    orjson = None
-
-
-def parse_selected_player_ids(players_args):
-    """Parse optional player ids from CLI args.
-
-    Supports both formats:
-    - --players 1 2 33
-    - --players 1,2,33
-    """
-    if not players_args:
-        return None
-
-    parsed_ids = set()
-    for raw_value in players_args:
-        for token in str(raw_value).split(','):
-            token = token.strip()
-            if not token:
-                continue
-            if not token.isdigit():
-                raise ValueError(f"Invalid player id: '{token}'. Use integers only.")
-            parsed_ids.add(int(token))
-
-    return sorted(parsed_ids) if parsed_ids else None
-
-
-def _point_in_bbox(x, y, bbox):
-    x1, y1, x2, y2 = bbox
-    return x1 <= x <= x2 and y1 <= y <= y2
-
-
-def _first_frame_with_players(tracks):
-    for frame_idx, frame_players in enumerate(tracks.get('players', [])):
-        if len(frame_players) > 0:
-            return frame_idx
-    return None
-
-
-def select_target_player_ids(video_frames, tracks, preferred_frame_index=None):
-    """Interactively select multiple players from a frame (click to toggle select/deselect).
-    
-    Returns a list of selected stable player IDs.
-    """
-    frame_with_players = preferred_frame_index
-    if frame_with_players is None:
-        frame_with_players = _first_frame_with_players(tracks)
-
-    if frame_with_players is None:
-        print("[select-target] No frame contains players. Cannot select target.")
-        return None
-
-    if frame_with_players < 0 or frame_with_players >= len(video_frames):
-        print(f"[select-target] Invalid frame index: {frame_with_players}")
-        return None
-
-    frame_players = tracks['players'][frame_with_players]
-    if len(frame_players) == 0:
-        print(f"[select-target] Frame {frame_with_players} has no players.")
-        return None
-
-    state = {'selected_player_ids': set()}
-    window_name = "Select Target Players (Left Click to toggle, ENTER confirm, ESC cancel)"
-
-    def on_mouse(event, x, y, flags, param):
-        if event != cv2.EVENT_LBUTTONDOWN:
-            return
-
-        hit_candidates = []
-        for player_id, track_info in frame_players.items():
-            bbox = track_info.get('bbox')
-            if bbox is None:
-                continue
-            if _point_in_bbox(x, y, bbox):
-                x1, y1, x2, y2 = bbox
-                area = max(1.0, (x2 - x1) * (y2 - y1))
-                hit_candidates.append((area, int(player_id)))
-
-        if not hit_candidates:
-            print("[select-target] Click inside a player bounding box.")
-            return
-
-        hit_candidates.sort(key=lambda item: item[0])
-        clicked_player_id = hit_candidates[0][1]
-        
-        # Toggle: if already selected, remove; otherwise add
-        if clicked_player_id in state['selected_player_ids']:
-            state['selected_player_ids'].discard(clicked_player_id)
-            print(f"[select-target] Deselected player ID: {clicked_player_id}")
-        else:
-            state['selected_player_ids'].add(clicked_player_id)
-            print(f"[select-target] Selected player ID: {clicked_player_id}")
-
-    try:
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        cv2.setMouseCallback(window_name, on_mouse)
-    except cv2.error as e:
-        print(f"[select-target] OpenCV UI unavailable: {e}")
-        return None
-
-    while True:
-        preview = video_frames[frame_with_players].copy()
-
-        for player_id, track_info in frame_players.items():
-            bbox = track_info.get('bbox')
-            if bbox is None:
-                continue
-            x1, y1, x2, y2 = map(int, bbox)
-
-            is_selected = int(player_id) in state['selected_player_ids']
-            color = (0, 255, 0) if is_selected else (255, 255, 0)
-            thickness = 3 if is_selected else 2
-
-            cv2.rectangle(preview, (x1, y1), (x2, y2), color, thickness)
-            cv2.putText(preview, f"ID {int(player_id)}", (x1, max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
-
-        cv2.putText(
-            preview,
-            f"Frame {frame_with_players} - (Click=toggle) | ENTER=confirm | ESC=cancel",
-            (25, 35),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (255, 255, 255),
-            2,
-        )
-
-        if state['selected_player_ids']:
-            selected_text = f"Selected: {sorted(state['selected_player_ids'])}"
-            cv2.putText(
-                preview,
-                selected_text,
-                (25, 70),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 0),
-                2,
-            )
-
-        cv2.imshow(window_name, preview)
-        key = cv2.waitKey(20) & 0xFF
-
-        if key in (13, 10):  # Enter
-            if state['selected_player_ids']:
-                selected_ids = sorted(list(state['selected_player_ids']))
-                cv2.destroyWindow(window_name)
-                print(f"[select-target] Selected stable player IDs: {selected_ids}")
-                return selected_ids
-            print("[select-target] Please select at least one player before pressing Enter.")
-        elif key in (27, ord('q')):  # Esc or q
-            cv2.destroyWindow(window_name)
-            print("[select-target] Selection canceled by user.")
-            return None
-
-
-# Keep backward-compatible alias for single player selection
-def select_target_player_id(video_frames, tracks, preferred_frame_index=None):
-    """Deprecated: Use select_target_player_ids() instead.
-    
-    This function now calls select_target_player_ids() and returns the first selected player ID.
-    """
-    result = select_target_player_ids(video_frames, tracks, preferred_frame_index)
-    if result is None or len(result) == 0:
-        return None
-    return result[0]
-
-
-def dump_json_file(path, data):
-    if orjson is not None:
-        with open(path, "wb") as f:
-            f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
-        return
-
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def assign_team_colors_from_first_player_frame(team_assigner, video_frames, tracks):
-    first_frame_with_players = _first_frame_with_players(tracks)
-    if first_frame_with_players is None:
-        print("Warning: No players found in any frame for team assignment")
-        team_assigner.team_colors = {1: (255, 0, 0), 2: (0, 0, 255)}
-        return
-
-    try:
-        team_assigner.assign_team_color(
-            video_frames[first_frame_with_players],
-            tracks['players'][first_frame_with_players],
-        )
-        print(f"Team colors assigned using frame {first_frame_with_players}")
-    except Exception as e:
-        print(f"Warning: Could not assign team colors: {e}")
-        team_assigner.team_colors = {1: (255, 0, 0), 2: (0, 0, 255)}
-
-
-def assign_teams_to_all_tracks(team_assigner, video_frames, tracks):
-    for frame_num, player_track in enumerate(tracks['players']):
-        for player_id, track in player_track.items():
-            try:
-                team = team_assigner.get_player_team(video_frames[frame_num], track['bbox'], player_id)
-            except Exception:
-                team = 1
-
-            tracks['players'][frame_num][player_id]['team'] = team
-            tracks['players'][frame_num][player_id]['team_color'] = team_assigner.team_colors.get(team, (255, 0, 0))
-
-
-def assign_ball_control(tracks):
-    player_assigner = PlayerBallAssigner()
-    team_ball_control = []
-
-    for frame_num, player_track in enumerate(tracks['players']):
-        current_ball = tracks['ball'][frame_num].get(1, {}) if frame_num < len(tracks['ball']) else {}
-        ball_bbox = current_ball.get('bbox')
-
-        if ball_bbox is None:
-            team_ball_control.append(team_ball_control[-1] if team_ball_control else 1)
-            continue
-
-        assigned_player = player_assigner.assign_ball_to_player(player_track, ball_bbox)
-        if assigned_player != -1:
-            tracks['players'][frame_num][assigned_player]['has_ball'] = True
-            team_ball_control.append(tracks['players'][frame_num][assigned_player]['team'])
-        else:
-            team_ball_control.append(team_ball_control[-1] if team_ball_control else 1)
-
-    return np.array(team_ball_control)
-
-
-def apply_advanced_jump_detection(video_frames, tracks, jump_detector):
-    print("Processing advanced jump detection...")
-    for frame_num, frame_players in enumerate(tracks['players']):
-        if frame_num >= len(video_frames):
-            continue
-
-        current_player_tracks = {
-            player_id: {'bbox': track_info['bbox']}
-            for player_id, track_info in frame_players.items()
-        }
-
-        _, jump_data = jump_detector.process_frame(video_frames[frame_num], current_player_tracks, frame_num)
-
-        for player_id, jump_info in jump_data.items():
-            if player_id not in frame_players:
-                continue
-
-            frame_players[player_id]['advanced_jump'] = jump_info.get('is_jumping', False)
-            frame_players[player_id]['jump_phase'] = jump_info.get('jump_phase', 'unknown')
-            frame_players[player_id]['jump_height_advanced'] = jump_info.get('jump_height', 0)
-            frame_players[player_id]['jump_confidence'] = jump_info.get('jump_confidence', 0)
-
-
-def filter_combined_stats_by_players(combined_stats, selected_player_ids=None):
-    """Filter combined stats payload to selected players only."""
-    if not selected_player_ids:
-        return combined_stats
-
-    selected_set = set(int(pid) for pid in selected_player_ids)
-    filtered_ids = sorted([pid for pid in combined_stats.get('detected_player_ids', []) if int(pid) in selected_set])
-
-    filtered_player_stats = {}
-    original_player_stats = combined_stats.get('player_stats', {})
-    for pid in filtered_ids:
-        key = f"player_{int(pid)}"
-        if key in original_player_stats:
-            filtered_player_stats[key] = original_player_stats[key]
-
-    if 'match_summary' in original_player_stats:
-        summary = dict(original_player_stats['match_summary'])
-        summary['total_players'] = len(filtered_ids)
-        filtered_player_stats['match_summary'] = summary
-
-    filtered_enhanced_stats = {}
-    original_enhanced_stats = combined_stats.get('enhanced_stats', {})
-    for pid in filtered_ids:
-        key = f"player_{int(pid)}"
-        if key in original_enhanced_stats:
-            filtered_enhanced_stats[key] = original_enhanced_stats[key]
-
-    filtered_advanced_jump_stats = {}
-    original_advanced_jump_stats = combined_stats.get('advanced_jump_stats', {})
-    for pid in filtered_ids:
-        key = str(int(pid))
-        if key in original_advanced_jump_stats:
-            filtered_advanced_jump_stats[key] = original_advanced_jump_stats[key]
-
-    return {
-        "timestamp": combined_stats.get("timestamp"),
-        "input_video": combined_stats.get("input_video"),
-        "total_detected_players": len(filtered_ids),
-        "detected_player_ids": filtered_ids,
-        "player_stats": filtered_player_stats,
-        "enhanced_stats": filtered_enhanced_stats,
-        "advanced_jump_stats": filtered_advanced_jump_stats,
-    }
-
-
-def filter_tracks_for_selected_players(tracks, selected_player_ids=None):
-    """Return a visualization-friendly tracks dict filtered to selected players only."""
-    if not selected_player_ids:
-        return tracks
-
-    selected_set = set(int(pid) for pid in selected_player_ids)
-    filtered_tracks = {}
-
-    for object_name, object_tracks in tracks.items():
-        if object_name == 'players':
-            filtered_player_frames = []
-            for frame_players in object_tracks:
-                filtered_frame = {
-                    player_id: track_info
-                    for player_id, track_info in frame_players.items()
-                    if int(player_id) in selected_set
-                }
-                filtered_player_frames.append(filtered_frame)
-            filtered_tracks[object_name] = filtered_player_frames
-        else:
-            # Keep non-player objects unchanged (ball/referees) for pipeline compatibility.
-            filtered_tracks[object_name] = object_tracks
-
-    return filtered_tracks
-
-
-def detect_id_switch(tracks, min_continuous_frames=30):
-    """Detect if ID switch occurred by analyzing player ID continuity.
-    
-    Returns a tuple: (id_switch_detected, problematic_frame, missing_player_ids)
-    """
-    player_ids_by_frame = []
-    for frame_players in tracks['players']:
-        player_ids_by_frame.append(set(frame_players.keys()))
-    
-    # Find frames where many players suddenly disappear
-    for frame_num in range(1, len(player_ids_by_frame)):
-        prev_ids = player_ids_by_frame[frame_num - 1]
-        curr_ids = player_ids_by_frame[frame_num]
-        
-        if len(prev_ids) == 0:
-            continue
-            
-        disappeared = prev_ids - curr_ids
-        disappear_ratio = len(disappeared) / len(prev_ids)
-        
-        # If >30% of players suddenly disappear, likely ID switch
-        if disappear_ratio > 0.3 and len(disappeared) >= 2:
-            return True, frame_num, disappeared
-    
-    return False, None, set()
-
-
-def detect_selected_players_disappeared(tracks, selected_player_ids, start_frame=0):
-    """Check if selected player IDs disappear during video processing.
-    
-    Returns: (disappeared, frame_num_when_disappeared)
-    """
-    if not selected_player_ids:
-        return False, None
-    
-    selected_set = set(int(pid) for pid in selected_player_ids)
-    
-    for frame_num in range(start_frame, len(tracks['players'])):
-        frame_players = tracks['players'][frame_num]
-        frame_player_ids = set(frame_players.keys())
-        
-        # Check if any selected players exist in this frame
-        selected_in_frame = selected_set & frame_player_ids
-        
-        # If none of the selected players are in frame, it's a disappearance
-        if len(selected_in_frame) == 0 and frame_num > start_frame:
-            return True, frame_num
-    
-    return False, None
-
-
-def save_checkpoint_data(combined_stats, selected_player_ids, checkpoint_name="checkpoint_1"):
-    """Save current stats as checkpoint to memory file."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    checkpoint_data = {
-        "checkpoint_name": checkpoint_name,
-        "timestamp": timestamp,
-        "selected_player_ids": selected_player_ids,
-        "stats": combined_stats
-    }
-    return checkpoint_data
-
-
-def merge_checkpoint_stats(checkpoint_data_list, timestamp):
-    """Merge multiple checkpoint data into one combined output."""
-    merged_stats = {
-        "timestamp": timestamp,
-        "input_video": checkpoint_data_list[0]['stats'].get("input_video"),
-        "total_checkpoints": len(checkpoint_data_list),
-        "checkpoints": []
-    }
-    
-    all_player_ids = set()
-    
-    for i, checkpoint in enumerate(checkpoint_data_list):
-        cp_info = {
-            "checkpoint_name": checkpoint['checkpoint_name'],
-            "timestamp": checkpoint['timestamp'],
-            "selected_player_ids": checkpoint['selected_player_ids'],
-            "player_stats": checkpoint['stats'].get('player_stats', {}),
-            "enhanced_stats": checkpoint['stats'].get('enhanced_stats', {}),
-            "advanced_jump_stats": checkpoint['stats'].get('advanced_jump_stats', {})
-        }
-        merged_stats["checkpoints"].append(cp_info)
-        all_player_ids.update(checkpoint['selected_player_ids'] or [])
-    
-    merged_stats["all_selected_player_ids"] = sorted([int(pid) for pid in all_player_ids])
-    return merged_stats
+# Import components
+from components import (
+    get_available_videos,
+    select_videos_interactive,
+    select_target_player_ids,
+    parse_selected_player_ids,
+    assign_team_colors_from_first_player_frame,
+    assign_teams_to_all_tracks,
+    assign_ball_control,
+    apply_advanced_jump_detection,
+    detect_id_switch,
+    detect_selected_players_disappeared,
+    dump_json_file,
+    filter_combined_stats_by_players,
+    filter_tracks_for_selected_players,
+    save_checkpoint_data,
+    merge_checkpoint_stats,
+    _first_frame_with_players,
+)
+# Utility functions are now in the components package
+# See: components/video_manager.py, components/player_selector.py, components/assigner.py,
+#      components/detector.py, components/stats_processor.py
 
 
 def main(
@@ -688,27 +298,14 @@ def main(
 
     os.makedirs("output_data", exist_ok=True)
     
-    # Save merged checkpoint data if multiple checkpoints exist
-    if len(checkpoint_list) > 1:
-        merged_data = merge_checkpoint_stats(checkpoint_list, timestamp)
-        merged_file = os.path.join("output_data", f"merged_checkpoints_{timestamp}.json")
-        dump_json_file(merged_file, merged_data)
-        print(f"\nMerged checkpoint data saved to: {merged_file}")
-    
-    # Save original checkpoint files
-    combined_stats_file = os.path.join("output_data", f"match_stats_{timestamp}.json")
-    dump_json_file(combined_stats_file, combined_stats)
-    print(f"First checkpoint statistics saved to: {combined_stats_file}")
+    # Save merged checkpoint data only
+    merged_data = merge_checkpoint_stats(checkpoint_list, timestamp)
+    merged_file = os.path.join("output_data", f"merged_checkpoints_{timestamp}.json")
+    dump_json_file(merged_file, merged_data)
+    print(f"\nMerged checkpoint data saved to: {merged_file}")
 
     # Save video with all features including minimap (same filename as before)
     save_video(output_video_frames, 'output_videos/output_video.avi')
-
-    # Print advanced jump detection summary
-    jump_stats = jump_detector.get_player_jump_stats()
-    print("\n=== Advanced Jump Detection Summary ===")
-    for player_id, stats in jump_stats.items():
-        print(f"Player {player_id}: {stats['total_jumps']} jumps detected, Max height: {stats['max_jump_height']:.1f}px")
-    print("==========================================\n")
 
 
 ###############################################################################
@@ -834,9 +431,19 @@ if __name__ == '__main__':
         help="Optional frame index for target selection. Defaults to first frame that contains players"
     )
     parser.add_argument(
+        "--videos",
+        nargs="+",
+        help="Input video paths (space-separated). Example: --videos video1.mp4 video2.mp4"
+    )
+    parser.add_argument(
         "--video",
-        default="input_videos/5.mp4",
-        help="Input video path"
+        default=None,
+        help="Input video path (single video). Use --videos for multiple videos"
+    )
+    parser.add_argument(
+        "--select-videos",
+        action="store_true",
+        help="Interactively select videos from input_videos/ directory"
     )
     parser.add_argument(
         "--model",
@@ -852,14 +459,49 @@ if __name__ == '__main__':
     args = parser.parse_args()
     selected_player_ids = parse_selected_player_ids(args.players)
 
-    # Default behavior: export all players when --players is omitted.
-    main(
-        enable_minimap=args.minimap,
-        verbose_debug=args.verbose_debug,
-        export_player_ids=selected_player_ids,
-        select_target=args.select_target,
-        target_frame_index=args.target_frame,
-        input_video_path=args.video,
-        model_path=args.model,
-        allow_id_switch_reselect=not args.no_id_switch_reselect,
-    )
+    # Determine which videos to process
+    videos_to_process = []
+    
+    if args.select_videos:
+        # Interactive selection of videos
+        videos_to_process = select_videos_interactive()
+    elif args.videos:
+        # Multiple videos from command line
+        videos_to_process = args.videos
+    elif args.video:
+        # Single video from command line
+        videos_to_process = [args.video]
+    else:
+        # Default: interactive selection if no video specified
+        print("\nNo video specified. Starting interactive video selection...")
+        videos_to_process = select_videos_interactive()
+    
+    if not videos_to_process:
+        print("No videos to process. Exiting.")
+        exit(1)
+    
+    # Process each selected video
+    for video_path in videos_to_process:
+        print(f"\n{'='*70}")
+        print(f"Processing: {video_path}")
+        print(f"{'='*70}\n")
+        
+        try:
+            main(
+                enable_minimap=args.minimap,
+                verbose_debug=args.verbose_debug,
+                export_player_ids=selected_player_ids,
+                select_target=args.select_target,
+                target_frame_index=args.target_frame,
+                input_video_path=video_path,
+                model_path=args.model,
+                allow_id_switch_reselect=not args.no_id_switch_reselect,
+            )
+            print(f"Successfully processed: {video_path}\n")
+        except Exception as e:
+            print(f"Error processing {video_path}: {e}\n")
+            continue
+    
+    print(f"\n{'='*70}")
+    print("All videos processed!")
+    print(f"{'='*70}")
