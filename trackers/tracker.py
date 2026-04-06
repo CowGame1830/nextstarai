@@ -17,13 +17,13 @@ except ImportError:
     nms = None
 
 class Tracker:
-    def __init__(self, model_path, frame_rate=24, detection_conf=0.1, imgsz=1280, batch_size=20, nms_threshold=0.5):
+    def __init__(self, model_path, frame_rate=24, detection_conf=0.35, imgsz=1280, batch_size=20, nms_threshold=0.4):
         self.model = YOLO(model_path)
         self.frame_rate = frame_rate
-        self.detection_conf = float(detection_conf)
+        self.detection_conf = float(detection_conf)  # Increased from 0.1 to 0.35 for better confidence
         self.imgsz = int(imgsz)
         self.batch_size = int(batch_size)
-        self.nms_threshold = float(nms_threshold)  # IoU threshold for NMS
+        self.nms_threshold = float(nms_threshold)  # IoU threshold for NMS, reduced to 0.4 for stricter NMS
 
         # Configure ByteTrack for stronger ID persistence under short occlusions.
         try:
@@ -367,6 +367,12 @@ class Tracker:
                 if cls_names[class_id] == "goalkeeper":
                     detection_supervision.class_id[object_ind] = cls_names_inv["player"]
 
+            # FILTER: Remove referees (no longer using them)
+            if "referee" in cls_names_inv:
+                referee_class_id = cls_names_inv["referee"]
+                referee_mask = detection_supervision.class_id != referee_class_id
+                detection_supervision = detection_supervision[referee_mask]
+
             # Track Objects
             detection_with_tracks = self.tracker.update_with_detections(detection_supervision)
 
@@ -382,8 +388,9 @@ class Tracker:
                 if cls_id == cls_names_inv['player']:
                     tracks["players"][frame_num][track_id] = {"bbox":bbox}
                 
-                if cls_id == cls_names_inv['referee']:
-                    tracks["referees"][frame_num][track_id] = {"bbox":bbox}
+                # Skip referees - removed from tracking
+                # if cls_id == cls_names_inv['referee']:
+                #     tracks["referees"][frame_num][track_id] = {"bbox":bbox}
             
             ball_class_id = cls_names_inv.get('ball')
             if ball_class_id is not None and detection_supervision.class_id is not None:

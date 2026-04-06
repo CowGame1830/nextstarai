@@ -14,6 +14,8 @@ from minimap_generator import MinimapGenerator
 import json
 from datetime import datetime
 import argparse
+import threading
+import time
 
 # Import components
 from components import (
@@ -39,6 +41,45 @@ from components import (
 #      components/detector.py, components/stats_processor.py
 
 
+class TerminalLoader:
+    """Lightweight terminal spinner for long-running steps."""
+
+    def __init__(self, message, interval=0.12):
+        self.message = message
+        self.interval = interval
+        self._stop_event = threading.Event()
+        self._thread = None
+        self.start_time = None
+
+    def _spin(self):
+        frames = ["|", "/", "-", "\\"]
+        i = 0
+        while not self._stop_event.is_set():
+            elapsed = time.time() - self.start_time
+            print(f"\r{frames[i % len(frames)]} {self.message}... {elapsed:5.1f}s", end="", flush=True)
+            i += 1
+            time.sleep(self.interval)
+
+    def __enter__(self):
+        self.start_time = time.time()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        elapsed = time.time() - self.start_time if self.start_time else 0
+        status = "done" if exc_type is None else "failed"
+        print(f"\r[{'OK' if exc_type is None else '!!'}] {self.message} ({status} in {elapsed:.1f}s)")
+
+
+def run_with_loader(message, func, *args, **kwargs):
+    with TerminalLoader(message):
+        return func(*args, **kwargs)
+
+
 def main(
     enable_minimap=False,
     verbose_debug=False,
@@ -47,19 +88,24 @@ def main(
     target_frame_index=None,
     input_video_path='input_videos/5.mp4',
     model_path='models/clean_label.pt',
+    detection_conf=0.35,
     allow_id_switch_reselect=True,
 ):
     # Read Video
-    video_frames = read_video(input_video_path)
+    video_frames = run_with_loader("Reading video", read_video, input_video_path)
     print(f"จำนวนเฟรมใน video_frames = {len(video_frames)}")
 
     # Initialize Tracker
-    tracker = Tracker(model_path)
+    tracker = Tracker(model_path, detection_conf=detection_conf)
 
-    tracks = tracker.get_object_tracks(video_frames,
-                                       read_from_stub=False,
-                                       stub_path='stubs/track_stubs.pkl')
-    tracks = tracker.stabilize_player_ids(tracks)
+    tracks = run_with_loader(
+        "Tracking objects",
+        tracker.get_object_tracks,
+        video_frames,
+        read_from_stub=False,
+        stub_path='stubs/track_stubs.pkl'
+    )
+    tracks = run_with_loader("Stabilizing player IDs", tracker.stabilize_player_ids, tracks)
 
 
     if select_target:
@@ -81,9 +127,13 @@ def main(
 
     # camera movement estimator
     camera_movement_estimator = CameraMovementEstimator(video_frames[0])
-    camera_movement_per_frame = camera_movement_estimator.get_camera_movement(video_frames,
-                                                                                read_from_stub=True,
-                                                                                stub_path='stubs/camera_movement_stub.pkl')
+    camera_movement_per_frame = run_with_loader(
+        "Estimating camera movement",
+        camera_movement_estimator.get_camera_movement,
+        video_frames,
+        read_from_stub=True,
+        stub_path='stubs/camera_movement_stub.pkl'
+    )
     camera_movement_estimator.add_adjust_positions_to_tracks(tracks,camera_movement_per_frame)
 
 
@@ -97,7 +147,7 @@ def main(
     # Speed and distance estimator with advanced jump detection
     speed_and_distance_estimator = SpeedAndDistance_Estimator()
     speed_and_distance_estimator.set_video_frames(video_frames)  # Set frames for jump detection
-    speed_and_distance_estimator.add_speed_and_distance_to_tracks(tracks)
+    run_with_loader("Computing speed and distance", speed_and_distance_estimator.add_speed_and_distance_to_tracks, tracks)
     
     # Initialize advanced jump detector for enhanced jump tracking
     jump_detector = AdvancedJumpDetector()
@@ -163,21 +213,34 @@ def main(
         print("Visualizing all detected players")
 
     ## Draw object Tracks
-    output_video_frames = tracker.draw_annotations(video_frames, visual_tracks, team_ball_control)
+    output_video_frames = run_with_loader(
+        "Drawing object annotations",
+        tracker.draw_annotations,
+        video_frames,
+        visual_tracks,
+        team_ball_control
+    )
 
     ## Draw Camera movement
     output_video_frames = camera_movement_estimator.draw_camera_movement(output_video_frames,camera_movement_per_frame)
 
     # Process advanced jump detection for all frames FIRST
-    apply_advanced_jump_detection(video_frames, tracks, jump_detector)
+    run_with_loader("Running advanced jump detection", apply_advanced_jump_detection, video_frames, tracks, jump_detector)
 
     ## Draw Speed and Distance (now with updated jump data)
-    output_video_frames = speed_and_distance_estimator.draw_speed_and_distance(output_video_frames, visual_tracks)
+    output_video_frames = run_with_loader(
+        "Rendering speed and distance overlays",
+        speed_and_distance_estimator.draw_speed_and_distance,
+        output_video_frames,
+        visual_tracks
+    )
     
     # Optional minimap overlay (disabled by default)
     if enable_minimap and minimap_generator:
         print("Adding minimap overlay to video frames...")
-        output_video_frames = minimap_generator.draw_minimap_with_stats(
+        output_video_frames = run_with_loader(
+            "Rendering minimap overlay",
+            minimap_generator.draw_minimap_with_stats,
             output_video_frames,
             visual_tracks,
             position='bottom_center',
@@ -241,12 +304,25 @@ def main(
                 visual_tracks_cp = filter_tracks_for_selected_players(tracks, reselected_ids)
                 
                 # Regenerate output frames for this checkpoint
-                output_video_frames_cp = tracker.draw_annotations(video_frames, visual_tracks_cp, team_ball_control)
+                output_video_frames_cp = run_with_loader(
+                    f"Checkpoint {checkpoint_count}: drawing annotations",
+                    tracker.draw_annotations,
+                    video_frames,
+                    visual_tracks_cp,
+                    team_ball_control
+                )
                 output_video_frames_cp = camera_movement_estimator.draw_camera_movement(output_video_frames_cp, camera_movement_per_frame)
-                output_video_frames_cp = speed_and_distance_estimator.draw_speed_and_distance(output_video_frames_cp, visual_tracks_cp)
+                output_video_frames_cp = run_with_loader(
+                    f"Checkpoint {checkpoint_count}: rendering overlays",
+                    speed_and_distance_estimator.draw_speed_and_distance,
+                    output_video_frames_cp,
+                    visual_tracks_cp
+                )
                 
                 if enable_minimap and minimap_generator:
-                    output_video_frames_cp = minimap_generator.draw_minimap_with_stats(
+                    output_video_frames_cp = run_with_loader(
+                        f"Checkpoint {checkpoint_count}: rendering minimap",
+                        minimap_generator.draw_minimap_with_stats,
                         output_video_frames_cp,
                         visual_tracks_cp,
                         position='bottom_center',
@@ -272,7 +348,7 @@ def main(
                 
                 # Save video for this checkpoint
                 output_video_path = f'output_videos/output_video_checkpoint{checkpoint_count}.avi'
-                save_video(output_video_frames_cp, output_video_path)
+                run_with_loader(f"Checkpoint {checkpoint_count}: saving video", save_video, output_video_frames_cp, output_video_path)
                 print(f"Video saved to {output_video_path}")
                 
                 # Check if these new selected players also disappeared - if yes, auto trigger again
@@ -305,7 +381,7 @@ def main(
     print(f"\nMerged checkpoint data saved to: {merged_file}")
 
     # Save video with all features including minimap (same filename as before)
-    save_video(output_video_frames, 'output_videos/output_video.avi')
+    run_with_loader("Saving output video", save_video, output_video_frames, 'output_videos/output_video.avi')
 
 
 ###############################################################################
@@ -323,7 +399,7 @@ def main_skeleton_jpg():
     print(f"Total frames: {len(video_frames)}")
 
     # Initialize Tracker
-    tracker = Tracker('models/clean_label.pt')
+    tracker = Tracker('models/clean_label.pt', detection_conf=0.35)  # Improved confidence threshold
 
     tracks = tracker.get_object_tracks(video_frames,
                                        read_from_stub=False,
@@ -376,7 +452,7 @@ def main3():
     video_frames = read_video('input_videos/5.mp4')
 
     # Initialize Tracker
-    tracker = Tracker('models/model_2_0.pt')
+    tracker = Tracker('models/model_2_0.pt', detection_conf=0.35)  # Improved confidence threshold
 
     tracks = tracker.get_object_tracks(video_frames,
                                        read_from_stub=True,
@@ -451,6 +527,12 @@ if __name__ == '__main__':
         help="Model path"
     )
     parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.35,
+        help="Confidence threshold for detections (0.0-1.0). Higher = fewer false positives but may miss objects. Default: 0.35"
+    )
+    parser.add_argument(
         "--no-id-switch-reselect",
         action="store_true",
         help="Disable ID switch re-selection feature (off by default)"
@@ -495,6 +577,7 @@ if __name__ == '__main__':
                 target_frame_index=args.target_frame,
                 input_video_path=video_path,
                 model_path=args.model,
+                detection_conf=args.conf,
                 allow_id_switch_reselect=not args.no_id_switch_reselect,
             )
             print(f"Successfully processed: {video_path}\n")
