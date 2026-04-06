@@ -1,30 +1,6 @@
 """
-Detection module - handles jump detection, ID switching, and player disappearance detection
+Detection module - handles ID switching and player disappearance detection
 """
-
-
-def apply_advanced_jump_detection(video_frames, tracks, jump_detector):
-    """Apply advanced jump detection to all frames."""
-    print("Processing advanced jump detection...")
-    for frame_num, frame_players in enumerate(tracks['players']):
-        if frame_num >= len(video_frames):
-            continue
-
-        current_player_tracks = {
-            player_id: {'bbox': track_info['bbox']}
-            for player_id, track_info in frame_players.items()
-        }
-
-        _, jump_data = jump_detector.process_frame(video_frames[frame_num], current_player_tracks, frame_num)
-
-        for player_id, jump_info in jump_data.items():
-            if player_id not in frame_players:
-                continue
-
-            frame_players[player_id]['advanced_jump'] = jump_info.get('is_jumping', False)
-            frame_players[player_id]['jump_phase'] = jump_info.get('jump_phase', 'unknown')
-            frame_players[player_id]['jump_height_advanced'] = jump_info.get('jump_height', 0)
-            frame_players[player_id]['jump_confidence'] = jump_info.get('jump_confidence', 0)
 
 
 def detect_id_switch(tracks, min_continuous_frames=30):

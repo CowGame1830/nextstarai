@@ -1,14 +1,13 @@
 import cv2
-import sys 
-import numpy as np
-import sys
-sys.path.append('../')
-from utils import measure_distance, get_foot_position
-from pose_estimator.advanced_jump_detector_clean import AdvancedJumpDetector
-import cv2
-import numpy as np
 import json
 import os
+import sys
+from collections import deque
+
+import numpy as np
+
+sys.path.append('../')
+from utils import measure_distance, get_foot_position
 
 class SpeedAndDistance_Estimator():
     def __init__(self):
@@ -22,7 +21,7 @@ class SpeedAndDistance_Estimator():
         self.player_smoothed_speeds = {}
         self.player_accelerations = {}  # Maximum acceleration
         self.player_current_accelerations = {}  # Current acceleration
-        self.player_jump_detection = {}
+        self.player_jump_counts = {}
         self.player_stamina = {}
         self.player_sprint_speeds = {}
         self.player_total_distances = {}
@@ -37,8 +36,6 @@ class SpeedAndDistance_Estimator():
             'sprinting': float('inf')  # 20+ km/h
         }
         
-        # Initialize advanced jump detector
-        self.jump_detector = AdvancedJumpDetector()
         self.video_frames = []  # Store frames for jump detection processing
     
     def set_video_frames(self, frames):
@@ -49,15 +46,15 @@ class SpeedAndDistance_Estimator():
         """Ensure all player stat containers exist for a track id."""
         self.all_detected_player_ids.add(track_id)
         if track_id not in self.player_speeds_history:
-            self.player_speeds_history[track_id] = []
+            self.player_speeds_history[track_id] = deque(maxlen=10)
             self.player_smoothed_speeds[track_id] = 0
             self.player_accelerations[track_id] = 0
             self.player_current_accelerations[track_id] = 0
-            self.player_jump_detection[track_id] = []
+            self.player_jump_counts[track_id] = 0
             self.player_stamina[track_id] = 100
             self.player_sprint_speeds[track_id] = 0
             self.player_total_distances[track_id] = 0
-            self.player_positions_history[track_id] = []
+            self.player_positions_history[track_id] = deque(maxlen=5)
             self.player_status[track_id] = 'waiting'
 
     def _compute_window_speed(self, object_tracks, track_id, frame_num, last_frame):
@@ -105,8 +102,6 @@ class SpeedAndDistance_Estimator():
         }
     
     def add_speed_and_distance_to_tracks(self,tracks):
-        total_distance= {}
-
         # Register all detected players first so they are always included in stats export.
         for frame_players in tracks.get("players", []):
             for track_id in frame_players.keys():
@@ -134,14 +129,6 @@ class SpeedAndDistance_Estimator():
                     start_position = object_tracks[start_idx][track_id]['position_transformed']
                     end_position = object_tracks[end_idx][track_id]['position_transformed']
 
-                    if object not in total_distance:
-                        total_distance[object]= {}
-                    
-                    if track_id not in total_distance[object]:
-                        total_distance[object][track_id] = 0
-                    
-                    total_distance[object][track_id] += distance_covered
-
                     # Enhanced tracking for real-time stats
                     self._update_player_stats(track_id, speed_km_per_hour, distance_covered, 
                                             start_position, end_position, frame_num)
@@ -149,15 +136,16 @@ class SpeedAndDistance_Estimator():
                     for frame_num_batch in range(start_idx, end_idx + 1):
                         if track_id not in tracks[object][frame_num_batch]:
                             continue
-                        tracks[object][frame_num_batch][track_id]['speed'] = speed_km_per_hour
-                        tracks[object][frame_num_batch][track_id]['distance'] = total_distance[object][track_id]
+                        track_info = tracks[object][frame_num_batch][track_id]
+                        track_info['speed'] = speed_km_per_hour
+                        track_info['distance'] = self.player_total_distances[track_id]
                         # Add enhanced stats to tracks
-                        tracks[object][frame_num_batch][track_id]['sprint_speed'] = self.player_sprint_speeds.get(track_id, 0)
-                        tracks[object][frame_num_batch][track_id]['acceleration'] = self.player_current_accelerations.get(track_id, 0)  # Use current acceleration
-                        tracks[object][frame_num_batch][track_id]['max_acceleration'] = self.player_accelerations.get(track_id, 0)  # Keep max for reference
-                        tracks[object][frame_num_batch][track_id]['stamina'] = self.player_stamina.get(track_id, 100)
-                        tracks[object][frame_num_batch][track_id]['jump_count'] = len(self.player_jump_detection.get(track_id, []))
-                        tracks[object][frame_num_batch][track_id]['status'] = self.player_status.get(track_id, 'waiting')
+                        track_info['sprint_speed'] = self.player_sprint_speeds.get(track_id, 0)
+                        track_info['acceleration'] = self.player_current_accelerations.get(track_id, 0)
+                        track_info['max_acceleration'] = self.player_accelerations.get(track_id, 0)
+                        track_info['stamina'] = self.player_stamina.get(track_id, 100)
+                        track_info['jump_count'] = int(self.player_jump_counts.get(track_id, 0))
+                        track_info['status'] = self.player_status.get(track_id, 'waiting')
 
         self._apply_default_stats_to_tracks(tracks)
 
@@ -176,7 +164,7 @@ class SpeedAndDistance_Estimator():
                     track_info.setdefault('acceleration', float(self.player_current_accelerations.get(track_id, 0.0)))
                     track_info.setdefault('max_acceleration', float(self.player_accelerations.get(track_id, 0.0)))
                     track_info.setdefault('stamina', float(self.player_stamina.get(track_id, 100.0)))
-                    track_info.setdefault('jump_count', len(self.player_jump_detection.get(track_id, [])))
+                    track_info.setdefault('jump_count', int(self.player_jump_counts.get(track_id, 0)))
                     track_info.setdefault('status', self.player_status.get(track_id, 'waiting'))
 
     def _update_player_stats(self, track_id, current_speed, distance_covered, start_pos, end_pos, frame_num):
@@ -217,41 +205,6 @@ class SpeedAndDistance_Estimator():
         
         # Update total distance
         self.player_total_distances[track_id] += distance_covered
-        
-        # Advanced jump detection (accurate OpenCV-based)
-        if self.video_frames and frame_num < len(self.video_frames):
-            try:
-                # Get current frame player tracks for advanced jump detection
-                current_frame_players = {track_id: {'bbox': [start_pos[0], start_pos[1], end_pos[0], end_pos[1]]}}
-                
-                # Process jump detection with advanced detector
-                _, jump_data = self.jump_detector.process_frame(
-                    self.video_frames[frame_num], 
-                    current_frame_players, 
-                    frame_num
-                )
-                
-                # Update jump detection data
-                if track_id in jump_data:
-                    jump_info = jump_data[track_id]
-                    if jump_info.get('is_jumping', False) and jump_info.get('jump_phase') == 'takeoff':
-                        jump_height = jump_info.get('jump_height', 0)
-                        # Only add jump when takeoff phase is detected (prevents duplicate counting)
-                        if frame_num not in [jump[0] for jump in self.player_jump_detection[track_id]]:
-                            self.player_jump_detection[track_id].append((frame_num, jump_height))
-                            print(f"[JUMP STORED] Player {track_id}: Jump {len(self.player_jump_detection[track_id])} stored at frame {frame_num}, height: {jump_height:.1f}px")
-                            
-            except Exception as e:
-                # Fallback to basic jump detection if advanced detector fails
-                if len(self.player_positions_history[track_id]) >= 2:
-                    prev_pos = self.player_positions_history[track_id][-2][1]  # Previous end position
-                    curr_pos = end_pos
-                    if prev_pos and curr_pos:
-                        vertical_change = abs(prev_pos[1] - curr_pos[1])
-                        if vertical_change > 30:  # Fallback jump threshold
-                            if frame_num not in [jump[0] for jump in self.player_jump_detection[track_id]]:
-                                self.player_jump_detection[track_id].append((frame_num, vertical_change))
-                                print(f"[FALLBACK JUMP] Player {track_id}: Jump stored at frame {frame_num}, vertical change: {vertical_change:.1f}px")
         
         # Update player status based on current speed
         self._update_player_status(track_id, current_speed)
@@ -298,38 +251,10 @@ class SpeedAndDistance_Estimator():
                    sprint_speed = self.player_sprint_speeds.get(track_id, speed)
                    acceleration = self.player_current_accelerations.get(track_id, 0)
                    stamina = self.player_stamina.get(track_id, 100)
-                   jump_count = len(self.player_jump_detection.get(track_id, []))
+                   jump_count = int(track_info.get('jump_count', self.player_jump_counts.get(track_id, 0)))
                    status = self.player_status.get(track_id, 'waiting')
                    
-                   # Check if jump is currently detected in this frame
-                   is_jumping_now = track_info.get('advanced_jump', False)
-                   jump_phase = track_info.get('jump_phase', 'unknown')
-                   
-                   # Update jump count in real-time when jump is detected
-                   current_jump_count = jump_count
-                   
-                   # Store jump in real-time if currently jumping and not already stored
-                   if is_jumping_now and jump_phase == 'takeoff':
-                       # Check if this frame's jump is not already stored
-                       existing_jumps = [jump[0] for jump in self.player_jump_detection.get(track_id, [])]
-                       if frame_num not in existing_jumps:
-                           # Store the jump immediately
-                           jump_height = track_info.get('jump_height_advanced', 20)  # Default height if not available
-                           if track_id not in self.player_jump_detection:
-                               self.player_jump_detection[track_id] = []
-                           self.player_jump_detection[track_id].append((frame_num, jump_height))
-                           print(f"[REAL-TIME JUMP] Player {track_id}: Jump {len(self.player_jump_detection[track_id])} stored at frame {frame_num}")
-                           
-                           # Update the tracks data immediately
-                           tracks[object][frame_num][track_id]['jump_count'] = len(self.player_jump_detection[track_id])
-                           current_jump_count = len(self.player_jump_detection[track_id])
-                   
-                   # Show +1 during takeoff and airborne phases
-                   if is_jumping_now and jump_phase in ['takeoff', 'airborne']:
-                       # Display the incremented count during jump phases
-                       display_jump_count = max(current_jump_count, jump_count + 1)
-                   else:
-                       display_jump_count = current_jump_count
+                   display_jump_count = jump_count
                    
                    bbox = track_info['bbox']
                    position = get_foot_position(bbox)
@@ -343,11 +268,8 @@ class SpeedAndDistance_Estimator():
                        'sprint_speed': sprint_speed,
                        'acceleration': acceleration,
                        'stamina': stamina,
-                           'jump_count': display_jump_count,
-                           'status': status,
-                           'is_jumping_now': is_jumping_now,
-                           'jump_phase': jump_phase,
-                           'jump_height_advanced': track_info.get('jump_height_advanced', 0)
+                       'jump_count': display_jump_count,
+                       'status': status,
                        })
             output_frames.append(frame)
         
@@ -435,46 +357,12 @@ class SpeedAndDistance_Estimator():
             cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_width, bar_y + 5), stamina_color, -1)
             cv2.rectangle(frame, (bar_x, bar_y), (panel_x + panel_width - 5, bar_y + 5), (128, 128, 128), 1)
             
-            # Jump Count with real-time "+1" indicator - always show stored jump count
+            # Jump Count
             text_y += 15
-            # Ensure we always show the actual stored jump count
-            if player_id not in self.player_jump_detection:
-                self.player_jump_detection[player_id] = []
-            actual_jump_count = len(self.player_jump_detection[player_id])
+            actual_jump_count = int(stats.get('jump_count', 0))
             jump_text = f"Jumps: {actual_jump_count}"
             cv2.putText(frame, jump_text, 
                        (panel_x + 5, text_y), font, font_scale, (255, 0, 255), thickness)
-            
-            # Show "+1" indicator when player is currently jumping and store the jump
-            if stats.get('is_jumping_now', False) and stats.get('jump_phase') in ['takeoff', 'airborne']:
-                # Initialize player jump detection if not exists
-                if player_id not in self.player_jump_detection:
-                    self.player_jump_detection[player_id] = []
-                
-                # Store jump when +1 is displayed (during takeoff phase only to prevent duplicates)
-                if stats.get('jump_phase') == 'takeoff':
-                    # Check if jump for current frame is not already stored
-                    frame_num = getattr(self, '_current_frame_num', 0)  # Get current frame number
-                    existing_jumps = [jump[0] for jump in self.player_jump_detection[player_id]]
-                    if frame_num not in existing_jumps:
-                        # Store the jump: increment count from current to +1
-                        jump_height = stats.get('jump_height_advanced', 25.0)  # Use advanced jump height if available
-                        self.player_jump_detection[player_id].append((frame_num, jump_height))
-                        new_count = len(self.player_jump_detection[player_id])
-                        print(f"[REAL-TIME JUMP] Player {player_id}: Jump {new_count} stored at frame {frame_num}")
-                        
-                        # Update the stats dictionary to reflect the new count immediately
-                        stats['jump_count'] = new_count
-                
-                # Position "+1" indicator next to jump count within the grey panel
-                jump_indicator_x = panel_x + 120  # Position within the panel
-                jump_indicator_y = text_y        # Same line as jump count
-                
-                # Draw prominent "+1" indicator with outline for visibility in grey background
-                cv2.putText(frame, "+1", 
-                           (jump_indicator_x, jump_indicator_y), font, 0.7, (0, 0, 0), 3)  # Black outline
-                cv2.putText(frame, "+1", 
-                           (jump_indicator_x, jump_indicator_y), font, 0.7, (0, 255, 0), 2)  # Bright green "+1"
 
             
         except Exception as e:
@@ -510,17 +398,18 @@ class SpeedAndDistance_Estimator():
 
         stats_data = {}
         for player_id in sorted(all_player_ids):
+            speed_history = self.player_speeds_history.get(player_id, [])
             stats_data[f"player_{int(player_id)}"] = {
                 "player_id": int(player_id),
                 "max_speed_kmh": float(self.player_sprint_speeds.get(player_id, 0)),
-                "avg_speed_kmh": float(np.mean(self.player_speeds_history.get(player_id, [0])) if self.player_speeds_history.get(player_id) else 0),
+                "avg_speed_kmh": float(sum(speed_history) / len(speed_history) if speed_history else 0),
                 "max_acceleration": float(self.player_accelerations.get(player_id, 0)),
                 "current_acceleration": float(self.player_current_accelerations.get(player_id, 0)),
                 "total_distance_m": float(self.player_total_distances.get(player_id, 0)),
-                "jump_count": len(self.player_jump_detection.get(player_id, [])),
+                "jump_count": int(self.player_jump_counts.get(player_id, 0)),
                 "final_stamina_percentage": float(self.player_stamina.get(player_id, 100)),
-                "speed_history": [float(s) for s in self.player_speeds_history.get(player_id, [])],
-                "jumps_detected": [(int(frame), float(height)) for frame, height in self.player_jump_detection.get(player_id, [])]
+                "speed_history": [float(s) for s in speed_history],
+                "jumps_detected": []
             }
 
         return stats_data

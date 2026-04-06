@@ -9,8 +9,6 @@ from camera_movement_estimator import CameraMovementEstimator
 from view_transformer import ViewTransformer
 from speed_and_distance_estimator import SpeedAndDistance_Estimator
 from player_stats import PlayerStatsTracker
-from pose_estimator.advanced_jump_detector_clean import AdvancedJumpDetector
-from minimap_generator import MinimapGenerator
 import json
 from datetime import datetime
 import argparse
@@ -26,7 +24,6 @@ from components import (
     assign_team_colors_from_first_player_frame,
     assign_teams_to_all_tracks,
     assign_ball_control,
-    apply_advanced_jump_detection,
     detect_id_switch,
     detect_selected_players_disappeared,
     dump_json_file,
@@ -81,7 +78,6 @@ def run_with_loader(message, func, *args, **kwargs):
 
 
 def main(
-    enable_minimap=False,
     verbose_debug=False,
     export_player_ids=None,
     select_target=False,
@@ -148,35 +144,19 @@ def main(
     speed_and_distance_estimator = SpeedAndDistance_Estimator()
     speed_and_distance_estimator.set_video_frames(video_frames)  # Set frames for jump detection
     run_with_loader("Computing speed and distance", speed_and_distance_estimator.add_speed_and_distance_to_tracks, tracks)
-    
-    # Initialize advanced jump detector for enhanced jump tracking
-    jump_detector = AdvancedJumpDetector()
-    print("Advanced jump detection initialized")
 
     # Initialize Player Statistics Tracker
     player_stats_tracker = PlayerStatsTracker(frame_rate=24)
     player_stats_tracker.update_player_stats(tracks)
+    for frame_players in tracks['players']:
+        for player_id, track_info in frame_players.items():
+            player_stats = player_stats_tracker.player_stats.get(player_id)
+            if player_stats is not None:
+                track_info['jump_count'] = int(player_stats.get('jump_count', 0))
     
-    # Initialize Minimap Generator only when needed
-    minimap_generator = None
-    if enable_minimap:
-        minimap_generator = MinimapGenerator(minimap_width=350, minimap_height=230)
-        print("Minimap generator initialized")
-
     # Assign Player Teams
     team_assigner = TeamAssigner()
     assign_team_colors_from_first_player_frame(team_assigner, video_frames, tracks)
-    
-    # Set minimap team colors to match assigned team colors
-    if enable_minimap and minimap_generator and hasattr(team_assigner, 'team_colors') and team_assigner.team_colors:
-        # Convert BGR to RGB for minimap (OpenCV uses BGR, minimap uses RGB)
-        team1_color = team_assigner.team_colors.get(1, (255, 0, 0))  # Default red
-        team2_color = team_assigner.team_colors.get(2, (0, 0, 255))  # Default blue
-        # Convert BGR to RGB
-        team1_rgb = (team1_color[2], team1_color[1], team1_color[0])
-        team2_rgb = (team2_color[2], team2_color[1], team2_color[0])
-        minimap_generator.set_team_colors(team1_rgb, team2_rgb)
-        print(f"Minimap team colors set: Team 1: {team1_rgb}, Team 2: {team2_rgb}")
     
     # Assign teams to all players
     assign_teams_to_all_tracks(team_assigner, video_frames, tracks)
@@ -224,10 +204,7 @@ def main(
     ## Draw Camera movement
     output_video_frames = camera_movement_estimator.draw_camera_movement(output_video_frames,camera_movement_per_frame)
 
-    # Process advanced jump detection for all frames FIRST
-    run_with_loader("Running advanced jump detection", apply_advanced_jump_detection, video_frames, tracks, jump_detector)
-
-    ## Draw Speed and Distance (now with updated jump data)
+    ## Draw Speed and Distance
     output_video_frames = run_with_loader(
         "Rendering speed and distance overlays",
         speed_and_distance_estimator.draw_speed_and_distance,
@@ -235,34 +212,30 @@ def main(
         visual_tracks
     )
     
-    # Optional minimap overlay (disabled by default)
-    if enable_minimap and minimap_generator:
-        print("Adding minimap overlay to video frames...")
-        output_video_frames = run_with_loader(
-            "Rendering minimap overlay",
-            minimap_generator.draw_minimap_with_stats,
-            output_video_frames,
-            visual_tracks,
-            position='bottom_center',
-            team_ball_control=team_ball_control
-        )
-        print("Minimap overlay completed - integrated into main video")
-    
     # Save one combined JSON file for all analysis outputs
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    all_player_ids = sorted({pid for frame_players in tracks['players'] for pid in frame_players.keys()})
+    all_player_ids = sorted(
+        set(speed_and_distance_estimator.all_detected_player_ids)
+        | {pid for frame_players in tracks['players'] for pid in frame_players.keys()}
+    )
 
-    combined_stats = {
-        "timestamp": timestamp,
-        "input_video": input_video_path,
-        "total_detected_players": len(all_player_ids),
-        "detected_player_ids": [int(pid) for pid in all_player_ids],
-        "player_stats": player_stats_tracker.build_stats_payload(timestamp=timestamp),
-        "enhanced_stats": speed_and_distance_estimator.build_enhanced_stats_data(all_player_ids=all_player_ids),
-        "advanced_jump_stats": jump_detector.get_player_jump_stats()
+    speed_and_distance_estimator.player_jump_counts = {
+        player_id: int(stats.get('jump_count', 0))
+        for player_id, stats in player_stats_tracker.player_stats.items()
     }
 
-    combined_stats = filter_combined_stats_by_players(combined_stats, export_player_ids)
+    def build_combined_stats_payload():
+        return {
+            "timestamp": timestamp,
+            "input_video": input_video_path,
+            "total_detected_players": len(all_player_ids),
+            "detected_player_ids": [int(pid) for pid in all_player_ids],
+            "player_stats": player_stats_tracker.build_stats_payload(timestamp=timestamp),
+            "enhanced_stats": speed_and_distance_estimator.build_enhanced_stats_data(all_player_ids=all_player_ids),
+            "advanced_jump_stats": {},
+        }
+
+    combined_stats = filter_combined_stats_by_players(build_combined_stats_payload(), export_player_ids)
 
     if export_player_ids:
         print(f"Exporting selected players only: {combined_stats['detected_player_ids']}")
@@ -319,28 +292,8 @@ def main(
                     visual_tracks_cp
                 )
                 
-                if enable_minimap and minimap_generator:
-                    output_video_frames_cp = run_with_loader(
-                        f"Checkpoint {checkpoint_count}: rendering minimap",
-                        minimap_generator.draw_minimap_with_stats,
-                        output_video_frames_cp,
-                        visual_tracks_cp,
-                        position='bottom_center',
-                        team_ball_control=team_ball_control
-                    )
-                
                 # Generate checkpoint stats
-                all_player_ids_cp = sorted({pid for frame_players in tracks['players'] for pid in frame_players.keys()})
-                combined_stats_cp = {
-                    "timestamp": timestamp,
-                    "input_video": input_video_path,
-                    "total_detected_players": len(all_player_ids_cp),
-                    "detected_player_ids": [int(pid) for pid in all_player_ids_cp],
-                    "player_stats": player_stats_tracker.build_stats_payload(timestamp=timestamp),
-                    "enhanced_stats": speed_and_distance_estimator.build_enhanced_stats_data(all_player_ids=all_player_ids_cp),
-                    "advanced_jump_stats": jump_detector.get_player_jump_stats()
-                }
-                combined_stats_cp = filter_combined_stats_by_players(combined_stats_cp, reselected_ids)
+                combined_stats_cp = filter_combined_stats_by_players(build_combined_stats_payload(), reselected_ids)
                 checkpoint_cp_data = save_checkpoint_data(combined_stats_cp, reselected_ids, f"checkpoint_{checkpoint_count}")
                 checkpoint_list.append(checkpoint_cp_data)
                 
@@ -380,7 +333,7 @@ def main(
     dump_json_file(merged_file, merged_data)
     print(f"\nMerged checkpoint data saved to: {merged_file}")
 
-    # Save video with all features including minimap (same filename as before)
+    # Save final video output
     run_with_loader("Saving output video", save_video, output_video_frames, 'output_videos/output_video.avi')
 
 
@@ -486,11 +439,6 @@ if __name__ == '__main__':
         help="Optional player IDs to export as JSON only for selected players. Examples: --players 1 33 or --players 1,33"
     )
     parser.add_argument(
-        "--minimap",
-        action="store_true",
-        help="Enable minimap overlay"
-    )
-    parser.add_argument(
         "--verbose-debug",
         action="store_true",
         help="Enable verbose debug output"
@@ -570,7 +518,6 @@ if __name__ == '__main__':
         
         try:
             main(
-                enable_minimap=args.minimap,
                 verbose_debug=args.verbose_debug,
                 export_player_ids=selected_player_ids,
                 select_target=args.select_target,

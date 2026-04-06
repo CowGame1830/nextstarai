@@ -88,14 +88,11 @@ class CameraMovementEstimator():
 
         for frame_num, frame in enumerate(frames):
             try:
-                # Create frame copy with memory optimization
+                # Create one output copy and draw the overlay on it directly.
                 frame = frame.copy()
-
-                # Create overlay with memory-efficient approach
-                overlay = frame.copy()
-                cv2.rectangle(overlay,(0,0),(500,100),(255,255,255),-1)
+                cv2.rectangle(frame,(0,0),(500,100),(255,255,255),-1)
                 alpha =0.6
-                cv2.addWeighted(overlay,alpha,frame,1-alpha,0,frame)
+                cv2.addWeighted(frame,alpha,frames[frame_num],1-alpha,0,frame)
 
                 # Check if frame_num is within camera_movement_per_frame bounds
                 if frame_num < len(camera_movement_per_frame):

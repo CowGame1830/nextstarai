@@ -201,6 +201,39 @@ class Tracker:
 
         return candidate_boxes[best_idx]
 
+    def _recover_stable_id_with_lookback(
+        self,
+        curr_box,
+        stable_memory,
+        frame_num,
+        used_stable_ids,
+        lookback_frames=10,
+        match_threshold=0.22,
+    ):
+        """Try to recover a previous stable ID from recent history before creating a new one."""
+        best_stable_id = None
+        best_score = -1.0
+
+        for stable_id, mem in stable_memory.items():
+            if stable_id in used_stable_ids:
+                continue
+
+            age = frame_num - mem["last_frame"]
+            if age <= 0 or age > lookback_frames:
+                continue
+
+            predicted_bbox = self._predict_bbox(mem)
+            score = self._match_score(predicted_bbox, curr_box)
+            score -= min(0.10, 0.01 * age)
+
+            if score > best_score:
+                best_score = score
+                best_stable_id = stable_id
+
+        if best_stable_id is not None and best_score >= match_threshold:
+            return best_stable_id
+        return None
+
     def stabilize_player_ids(self, tracks, max_gap=18, match_threshold=0.28):
         """Reduce ID switches by globally matching current players to stable memory."""
         if "players" not in tracks:
@@ -282,17 +315,37 @@ class Tracker:
                 if i in assigned_current_indices:
                     continue
 
-                stable_id = stable_next_id
-                stable_next_id += 1
+                # Before creating a new ID, try to recover an old stable ID from the last 10 frames.
+                stable_id = self._recover_stable_id_with_lookback(
+                    curr_box=curr_box,
+                    stable_memory=stable_memory,
+                    frame_num=frame_num,
+                    used_stable_ids=set(remapped_players.keys()),
+                    lookback_frames=10,
+                    match_threshold=0.22,
+                )
+
+                if stable_id is None:
+                    stable_id = stable_next_id
+                    stable_next_id += 1
 
                 merged_info = dict(info)
                 merged_info["raw_track_id"] = int(raw_id)
                 remapped_players[stable_id] = merged_info
 
+                prev_mem = stable_memory.get(stable_id)
+                if prev_mem is not None:
+                    prev_center = get_center_of_bbox(prev_mem["bbox"])
+                    curr_center = get_center_of_bbox(curr_box)
+                    vx = float(curr_center[0] - prev_center[0])
+                    vy = float(curr_center[1] - prev_center[1])
+                else:
+                    vx, vy = 0.0, 0.0
+
                 stable_memory[stable_id] = {
                     "bbox": curr_box,
                     "last_frame": frame_num,
-                    "velocity": (0.0, 0.0),
+                    "velocity": (vx, vy),
                 }
                 raw_to_stable_recent[raw_id] = {"stable_id": stable_id, "last_frame": frame_num}
 
@@ -483,10 +536,16 @@ class Tracker:
         alpha = 0.4
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-        team_ball_control_till_frame = team_ball_control[:frame_num+1]
-        # Get the number of time each team had ball control
-        team_1_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==1].shape[0]
-        team_2_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==2].shape[0]
+        team_1_prefix = getattr(self, '_team_1_prefix_counts', None)
+        team_2_prefix = getattr(self, '_team_2_prefix_counts', None)
+        if team_1_prefix is not None and team_2_prefix is not None and frame_num < len(team_1_prefix):
+            team_1_num_frames = int(team_1_prefix[frame_num])
+            team_2_num_frames = int(team_2_prefix[frame_num])
+        else:
+            team_ball_control_till_frame = team_ball_control[:frame_num+1]
+            # Get the number of time each team had ball control
+            team_1_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==1].shape[0]
+            team_2_num_frames = team_ball_control_till_frame[team_ball_control_till_frame==2].shape[0]
         total_frames = team_1_num_frames + team_2_num_frames
         if total_frames == 0:
             team_1 = 0.0
@@ -502,6 +561,14 @@ class Tracker:
 
     def draw_annotations(self,video_frames, tracks,team_ball_control):
         output_video_frames= []
+        if team_ball_control is not None and len(team_ball_control) > 0:
+            team_ball_control_array = np.asarray(team_ball_control)
+            self._team_1_prefix_counts = np.cumsum(team_ball_control_array == 1)
+            self._team_2_prefix_counts = np.cumsum(team_ball_control_array == 2)
+        else:
+            self._team_1_prefix_counts = None
+            self._team_2_prefix_counts = None
+
         for frame_num, frame in enumerate(video_frames):
             frame = frame.copy()
 
@@ -530,5 +597,8 @@ class Tracker:
             frame = self.draw_team_ball_control(frame, frame_num, team_ball_control)
 
             output_video_frames.append(frame)
+
+        self._team_1_prefix_counts = None
+        self._team_2_prefix_counts = None
 
         return output_video_frames

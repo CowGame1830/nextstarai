@@ -16,7 +16,6 @@ from .assigner import (
     assign_ball_control
 )
 from .detector import (
-    apply_advanced_jump_detection,
     detect_id_switch,
     detect_selected_players_disappeared
 )
@@ -43,7 +42,6 @@ __all__ = [
     'assign_teams_to_all_tracks',
     'assign_ball_control',
     # detector
-    'apply_advanced_jump_detection',
     'detect_id_switch',
     'detect_selected_players_disappeared',
     # stats_processor
