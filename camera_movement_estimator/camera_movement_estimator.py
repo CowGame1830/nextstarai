@@ -105,9 +105,6 @@ class CameraMovementEstimator():
 
                 output_frames.append(frame)
                 
-                # Clean up overlay to free memory
-                del overlay
-                
             except Exception as e:
                 print(f"Error processing frame {frame_num}: {e}")
                 # Add original frame if processing fails

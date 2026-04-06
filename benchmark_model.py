@@ -1,5 +1,6 @@
 import argparse
 import json
+import statistics
 import os
 import time
 from collections import defaultdict
@@ -33,6 +34,7 @@ def summarize_video_performance(model, video_path, conf=0.1, imgsz=1280, batch_s
     class_counts = defaultdict(int)
     class_conf_sum = defaultdict(float)
     class_frame_hits = defaultdict(int)
+    all_conf_scores = []
 
     frame_buffer = []
 
@@ -58,6 +60,7 @@ def summarize_video_performance(model, video_path, conf=0.1, imgsz=1280, batch_s
                 class_name = get_class_name(names_map, int(class_id))
                 class_counts[class_name] += 1
                 class_conf_sum[class_name] += float(score)
+                all_conf_scores.append(float(score))
                 seen_classes.add(class_name)
 
             for class_name in seen_classes:
@@ -97,7 +100,24 @@ def summarize_video_performance(model, video_path, conf=0.1, imgsz=1280, batch_s
             "detections": int(detections),
             "avg_detections_per_frame": round(detections / total_frames_processed, 4),
             "avg_confidence": round(avg_conf, 4),
+            "avg_confidence_percent": round(avg_conf * 100.0, 2),
             "frame_presence_ratio": round(frame_presence_ratio, 4),
+        }
+
+    confidence_summary = {
+        "mean": 0.0,
+        "mean_percent": 0.0,
+        "median": 0.0,
+        "median_percent": 0.0,
+    }
+    if all_conf_scores:
+        mean_conf = statistics.fmean(all_conf_scores)
+        median_conf = statistics.median(all_conf_scores)
+        confidence_summary = {
+            "mean": round(mean_conf, 4),
+            "mean_percent": round(mean_conf * 100.0, 2),
+            "median": round(median_conf, 4),
+            "median_percent": round(median_conf * 100.0, 2),
         }
 
     fps_inference_only = (total_frames_processed / inference_seconds) if inference_seconds > 0 else 0.0
@@ -114,6 +134,7 @@ def summarize_video_performance(model, video_path, conf=0.1, imgsz=1280, batch_s
         "ms_per_frame_inference": round((inference_seconds / total_frames_processed) * 1000.0, 4),
         "total_detections": total_detections,
         "avg_detections_per_frame": round(total_detections / total_frames_processed, 4),
+        "confidence_summary": confidence_summary,
         "per_class": per_class,
     }
 
@@ -147,7 +168,7 @@ def main():
     parser.add_argument("--model", default="models/clean_label.pt", help="Path to model weights")
     parser.add_argument("--video", default="input_videos/10secVideo.mp4", help="Path to test video")
     parser.add_argument("--data", default=None, help="Optional data.yaml for labeled validation")
-    parser.add_argument("--conf", type=float, default=0.1, help="Confidence threshold")
+    parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     parser.add_argument("--imgsz", type=int, default=1280, help="Inference image size")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size for video inference")
     parser.add_argument("--max-frames", type=int, default=None, help="Optional frame cap for quick tests")

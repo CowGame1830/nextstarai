@@ -260,18 +260,22 @@ def main(
             print("Automatically popping up player selection UI...\n")
             
             # Auto-trigger re-selection loop - keep asking until player confirms or no disappearance
-            reselected_ids = select_target_player_ids(
+            reselected_result = select_target_player_ids(
                 video_frames=video_frames,
                 tracks=tracks,
                 preferred_frame_index=disappeared_frame,
+                return_selected_frame=True,
             )
-            
-            last_disappear_frame = disappeared_frame
+            if reselected_result is None:
+                reselected_ids = None
+                reselected_from_frame = None
+            else:
+                reselected_ids, reselected_from_frame = reselected_result
             
             # Keep looping through re-selections if players keep disappearing
             while reselected_ids is not None and len(reselected_ids) > 0:
                 checkpoint_count += 1
-                print(f"\nRe-selected new players (Checkpoint {checkpoint_count}): {reselected_ids}")
+                print(f"\nRe-selected new players (Checkpoint {checkpoint_count}): {reselected_ids} (from frame {reselected_from_frame})")
                 
                 # Filter tracks and regenerate stats for new selection
                 visual_tracks_cp = filter_tracks_for_selected_players(tracks, reselected_ids)
@@ -306,20 +310,25 @@ def main(
                 
                 # Check if these new selected players also disappeared - if yes, auto trigger again
                 selected_disappeared_again, disappeared_frame_again = detect_selected_players_disappeared(
-                    tracks, reselected_ids, last_disappear_frame
+                    tracks, reselected_ids, reselected_from_frame
                 )
                 
                 if selected_disappeared_again:
                     print(f"\n  New selected players disappeared at frame {disappeared_frame_again}")
                     print(" AUTO RE-SELECTION: Popping up player selection UI again...\n")
-                    last_disappear_frame = disappeared_frame_again
                     
                     # Auto-trigger next re-selection
-                    reselected_ids = select_target_player_ids(
+                    reselected_result = select_target_player_ids(
                         video_frames=video_frames,
                         tracks=tracks,
                         preferred_frame_index=disappeared_frame_again,
+                        return_selected_frame=True,
                     )
+                    if reselected_result is None:
+                        reselected_ids = None
+                        reselected_from_frame = None
+                    else:
+                        reselected_ids, reselected_from_frame = reselected_result
                 else:
                     # New selection is stable - break loop
                     print("\nCurrent selection is stable - no further disappearances detected")

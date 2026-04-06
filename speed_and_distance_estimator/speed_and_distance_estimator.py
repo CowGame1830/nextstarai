@@ -238,6 +238,8 @@ class SpeedAndDistance_Estimator():
             for object, object_tracks in tracks.items():
                 if object == "ball" or object == "referees":
                     continue 
+                if frame_num >= len(object_tracks):
+                    continue
                 for track_id, track_info in object_tracks[frame_num].items():
                    # Always show stats for all tracked players, using class storage when track data is missing
                    speed = track_info.get('speed', 0)

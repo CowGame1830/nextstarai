@@ -41,10 +41,11 @@ def parse_selected_player_ids(players_args):
     return sorted(parsed_ids) if parsed_ids else None
 
 
-def select_target_player_ids(video_frames, tracks, preferred_frame_index=None):
+def select_target_player_ids(video_frames, tracks, preferred_frame_index=None, return_selected_frame=False):
     """Interactively select multiple players from a frame (click to toggle select/deselect).
     
     Returns a list of selected stable player IDs.
+    If return_selected_frame=True, returns (selected_ids, selected_frame_index).
     """
     frame_with_players = preferred_frame_index
     if frame_with_players is None:
@@ -145,8 +146,11 @@ def select_target_player_ids(video_frames, tracks, preferred_frame_index=None):
         if key in (13, 10):  # Enter
             if state['selected_player_ids']:
                 selected_ids = sorted(list(state['selected_player_ids']))
+                selected_frame = state['current_frame']
                 cv2.destroyWindow(window_name)
                 print(f"[select-target] Selected stable player IDs: {selected_ids}")
+                if return_selected_frame:
+                    return selected_ids, selected_frame
                 return selected_ids
             else:
                 # No selection - skip 5 frames forward

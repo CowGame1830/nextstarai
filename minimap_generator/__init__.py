@@ -1,1 +1,0 @@
-from .minimap_generator import MinimapGenerator
