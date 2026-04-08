@@ -1,6 +1,6 @@
 # Player Attribute Calculation Guide
 
-This project takes raw tracking data from YOLOv8 and converts it into **Football Manager (FM)** style player attributes (1-20 scale).
+This project takes raw tracking data from YOLOv8 and converts it into **Football Manager (FM)** style player attributes (10-200 scale).
 
 ---
 
@@ -34,15 +34,21 @@ This measures a player's "hustle"—how often they are actively trying to make t
 
 ---
 
-## 📂 File Breakdown
+## 📂 File Structure
 
-1.  **`attribute_cal.py`**: The "Brain" of the project. This is where the 4 main functions live.
-2.  **`print_attributes.py`**: The "Display" tool. Run this to see a nice table of all your players and their scores.
-3.  **`find_max.py`**: The "Scanner". It finds the top speed/acceleration in your specific video so we can scale everyone else correctly.
+- **`calculate_unified_attributes.py`**: **Main Entry Point.** Run this to process all player checkpoints and see the final FM-scale attributes.
+- **`core/`**:
+    - `attribute_cal.py`: The core formulas for attribute calculation.
+    - `unify_stats.py`: Logic for merging multiple player IDs/checkpoints into one profile.
+- **`tools/`**:
+    - `find_max.py`: Scanner to find top speed/acceleration in tracking data.
+    - `web_scraping.py`: Tool to fetch real attributes from FMPlayer.net.
+- **`input/`**: Directory for your tracking JSON files.
+- **`player_data/`**: Directory for player lists and scraped results.
 
 ## 🚀 Quick Usage
 
-To see your player attributes, just run:
+To see your unified player attributes (merging all data for each player), run:
 ```bash
-python print_attributes.py
+python calculate_unified_attributes.py
 ```
