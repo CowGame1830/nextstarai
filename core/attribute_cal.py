@@ -10,28 +10,40 @@ def calculate_pace(max_speed_kmh):
     """
     Calculates Pace attribute (10-200) based on top speed.
 
-    World-class benchmarks:
-      - 22 km/h  →  10  (minimum)
-      - 37 km/h  → 200  (elite world-class)
+    FM26 Benchmarks:
+      - 24 km/h    →  100 (Standard Pro, FM 10)
+      - 37.4 km/h  →  200 (Van de Ven Record, FM 20)
 
-    Formula: ((max_speed_kmh - 22) / 15) * 190 + 10
+    Formula: Linear scale between 24 and 37.4 km/h.
     """
-    score = ((max_speed_kmh - 22) / 15) * 190 + 10
-    return min(200, max(10, round(score)))
+    # Slope: (200 - 100) / (37.4 - 24.0) = 100 / 13.4
+    slope = 100.0 / 13.4
+    score = 100.0 + (max_speed_kmh - 24.0) * slope
+    
+    return min(220, max(10, round(score)))
 
 
 def calculate_acceleration(max_acceleration_ms2):
     """
-    Calculates Acceleration attribute (10-200) based on peak acceleration.
+    Calculates Acceleration attribute (10-200) based on peak burst.
 
-    World-class benchmarks:
-      -  2 m/s²  →  10  (minimum)
-      - 12 m/s²  → 200  (elite world-class)
+    FM26 Benchmarks:
+      - 2.5 m/s²  →  100 (Standard Start, FM 10)
+      - 6.5 m/s²  →  180 (Elite Burst, FM 18 - e.g. Traoré)
+      - 8.5 m/s²  →  200 (Olympic Burst, FM 20)
 
-    Formula: ((max_acceleration_ms2 - 2) / 10) * 190 + 10
+    Formula: Piecewise linear scale.
     """
-    score = ((max_acceleration_ms2 - 2) / 10) * 190 + 10
-    return min(200, max(10, round(score)))
+    if max_acceleration_ms2 < 6.5:
+        # Segment 1: [2.5, 6.5] -> [100, 180]
+        # Slope: (180 - 100) / (6.5 - 2.5) = 80 / 4 = 20
+        score = 100.0 + (max_acceleration_ms2 - 2.5) * 20.0
+    else:
+        # Segment 2: [6.5, 8.5] -> [180, 200]
+        # Slope: (200 - 180) / (8.5 - 6.5) = 20 / 2 = 10
+        score = 180.0 + (max_acceleration_ms2 - 6.5) * 10.0
+        
+    return min(220, max(10, round(score)))
 
 
 def calculate_work_rate(avg_speed_kmh, sprint_percentage):
@@ -74,15 +86,15 @@ def calculate_stamina(stamina_percentage):
 
 if __name__ == "__main__":
     # --- Quick sanity-check ---
-    print("=== Sanity Check ===")
-    print(f"Pace  @ 22 km/h  : {calculate_pace(22):>4}  (expect 10)")
-    print(f"Pace  @ 37 km/h  : {calculate_pace(37):>4}  (expect 200)")
-    print(f"Pace  @ 30 km/h  : {calculate_pace(30):>4}  (expect ~101)")
-    print(f"Accel @  2 m/s²  : {calculate_acceleration(2):>4}  (expect 10)")
-    print(f"Accel @ 12 m/s²  : {calculate_acceleration(12):>4}  (expect 200)")
-    print(f"Accel @  7 m/s²  : {calculate_acceleration(7):>4}  (expect ~105)")
-    print(f"Work  avg=10 spr=0.075: {calculate_work_rate(10, 0.075):>4}  (expect 105)")
-    print(f"Work  avg=20 spr=0.15 : {calculate_work_rate(20, 0.15):>4}  (expect 200)")
-    print(f"Stam  @   0%     : {calculate_stamina(0):>4}  (expect 10)")
-    print(f"Stam  @  50%     : {calculate_stamina(50):>4}  (expect ~105)")
-    print(f"Stam  @ 100%     : {calculate_stamina(100):>4}  (expect 200)")
+    print("=== FM26 Recalibration Sanity Check ===")
+    print(f"Pace  @ 24.0 km/h : {calculate_pace(24.0):>4} (expect 100)")
+    print(f"Pace  @ 37.4 km/h : {calculate_pace(37.4):>4} (expect 200)")
+    print(f"Pace  @ 30.0 km/h : {calculate_pace(30.0):>4} (expect ~145)")
+    
+    print(f"Accel @ 2.5 m/s²  : {calculate_acceleration(2.5):>4} (expect 100)")
+    print(f"Accel @ 6.5 m/s²  : {calculate_acceleration(6.5):>4} (expect 180)")
+    print(f"Accel @ 8.5 m/s²  : {calculate_acceleration(8.5):>4} (expect 200)")
+    
+    # Check Work Rate & Stamina (unchanged)
+    print(f"Work Intensity=1.0 freq=1.0: {calculate_work_rate(20, 0.15):>4} (expect 200)")
+    print(f"Stamina @ 50%: {calculate_stamina(50):>4} (expect 105)")
