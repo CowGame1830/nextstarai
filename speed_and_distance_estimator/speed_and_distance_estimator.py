@@ -15,6 +15,8 @@ class SpeedAndDistance_Estimator():
         self.frame_rate=24
         self.speed_smoothing_alpha = 0.35
         self.max_plausible_speed_kmh = 42.0
+        self.min_movement_noise_m = 0.05
+        self.max_step_distance_m = (self.max_plausible_speed_kmh / 3.6) / self.frame_rate * 1.35
         # Enhanced tracking for real-time stats
         self.player_positions_history = {}
         self.player_speeds_history = {}
@@ -73,7 +75,12 @@ class SpeedAndDistance_Estimator():
 
         distance_covered = 0.0
         for i in range(1, len(valid_points)):
-            distance_covered += measure_distance(valid_points[i - 1][1], valid_points[i][1])
+            step_distance = float(measure_distance(valid_points[i - 1][1], valid_points[i][1]))
+            # Ignore tiny jitter and clamp implausibly large per-frame jumps.
+            if step_distance < self.min_movement_noise_m:
+                continue
+            step_distance = min(step_distance, self.max_step_distance_m)
+            distance_covered += step_distance
 
         start_idx = valid_points[0][0]
         end_idx = valid_points[-1][0]
@@ -83,6 +90,9 @@ class SpeedAndDistance_Estimator():
         time_elapsed = (end_idx - start_idx) / self.frame_rate
         if time_elapsed <= 0:
             return None
+
+        max_window_distance = (self.max_plausible_speed_kmh / 3.6) * time_elapsed
+        distance_covered = min(distance_covered, max_window_distance)
 
         raw_speed_km_per_hour = (distance_covered / time_elapsed) * 3.6
         clipped_speed_km_per_hour = min(raw_speed_km_per_hour, self.max_plausible_speed_kmh)

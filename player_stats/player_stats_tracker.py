@@ -11,6 +11,7 @@ class PlayerStatsTracker:
         self.player_stats = {}
         self.frame_time = 1.0 / frame_rate  # Time per frame in seconds
         self.jump_cooldown_frames = max(4, int(0.35 * frame_rate))
+        self.max_plausible_speed_kmh = 42.0
         
     def update_player_stats(self, tracks):
         """Update statistics for all tracked players"""
@@ -58,6 +59,7 @@ class PlayerStatsTracker:
                     if 'speed' in track_info:
                         # track_info['speed'] is already in km/h from SpeedAndDistance_Estimator
                         current_speed = float(track_info['speed'])
+                        current_speed = float(np.clip(current_speed, 0.0, self.max_plausible_speed_kmh))
                         stats['speeds'].append(current_speed)
                         stats['current_speed'] = current_speed
                         stats['max_speed'] = max(stats['max_speed'], current_speed)
@@ -84,7 +86,9 @@ class PlayerStatsTracker:
                     # Calculate distance
                     if 'distance' in track_info:
                         # track_info['distance'] is cumulative for the player.
-                        stats['total_distance'] = float(track_info['distance'])
+                        incoming_distance = float(track_info['distance'])
+                        if np.isfinite(incoming_distance):
+                            stats['total_distance'] = max(stats['total_distance'], max(0.0, incoming_distance))
                 
                 # Detect jumps with a rise->fall pattern to avoid one-frame jitter counts.
                 if len(stats['positions']) >= 2:

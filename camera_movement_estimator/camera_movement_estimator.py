@@ -30,15 +30,24 @@ class CameraMovementEstimator():
         )
 
     def add_adjust_positions_to_tracks(self,tracks, camera_movement_per_frame):
+        cumulative_camera_movement = []
+        sum_x, sum_y = 0.0, 0.0
+        for move in camera_movement_per_frame:
+            dx = float(move[0]) if isinstance(move, (list, tuple)) and len(move) >= 2 else 0.0
+            dy = float(move[1]) if isinstance(move, (list, tuple)) and len(move) >= 2 else 0.0
+            sum_x += dx
+            sum_y += dy
+            cumulative_camera_movement.append((sum_x, sum_y))
+
         for object, object_tracks in tracks.items():
             for frame_num, track in enumerate(object_tracks):
                 for track_id, track_info in track.items():
                     position = track_info['position']
-                    # Check if frame_num is within camera_movement_per_frame bounds
-                    if frame_num < len(camera_movement_per_frame):
-                        camera_movement = camera_movement_per_frame[frame_num]
+                    # Use cumulative camera shift up to this frame.
+                    if frame_num < len(cumulative_camera_movement):
+                        camera_movement = cumulative_camera_movement[frame_num]
                     else:
-                        camera_movement = [0, 0]  # Default to no movement if out of bounds
+                        camera_movement = (0.0, 0.0)  # Default to no movement if out of bounds
                     position_adjusted = (position[0]-camera_movement[0],position[1]-camera_movement[1])
                     tracks[object][frame_num][track_id]['position_adjusted'] = position_adjusted
                     
