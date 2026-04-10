@@ -83,7 +83,7 @@ def main(
     select_target=False,
     target_frame_index=None,
     input_video_path='input_videos/5.mp4',
-    model_path='models/clean_label.pt',
+    model_path='models/yolov8n.pt',
     detection_conf=0.35,
     allow_id_switch_reselect=True,
 ):
@@ -361,7 +361,7 @@ def main_skeleton_jpg():
     print(f"Total frames: {len(video_frames)}")
 
     # Initialize Tracker
-    tracker = Tracker('models/clean_label.pt', detection_conf=0.35)  # Improved confidence threshold
+    tracker = Tracker('models/yolov8n.pt', detection_conf=0.35)  # Improved confidence threshold
 
     tracks = tracker.get_object_tracks(video_frames,
                                        read_from_stub=False,
@@ -480,7 +480,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--model",
-        default="models/clean_label.pt",
+        default="models/yolov8n.pt",
         help="Model path"
     )
     parser.add_argument(

@@ -10,6 +10,11 @@ class PlayerStatsTracker:
         self.frame_rate = frame_rate
         self.player_stats = {}
         self.frame_time = 1.0 / frame_rate  # Time per frame in seconds
+        self.jump_cooldown_frames = max(8, int(0.6 * frame_rate))
+        self.jump_window_size = max(5, int(0.45 * frame_rate))
+        self.jump_confirm_frames = 2
+        self.jump_landing_frames = 2
+        self.jump_min_airborne_frames = max(3, int(0.18 * frame_rate))
         
     def update_player_stats(self, tracks):
         """Update statistics for all tracked players"""
@@ -33,7 +38,15 @@ class PlayerStatsTracker:
                         'stamina_score': 100.0,
                         'sprint_time': 0.0,
                         'frame_count': 0,
-                        'avg_speed': 0.0
+                        'avg_speed': 0.0,
+                        'last_jump_frame': -10_000,
+                        'jump_state': 'ground',
+                        'jump_motion_history': [],
+                        'jump_baseline_y': None,
+                        'jump_peak_y': None,
+                        'jump_upward_frames': 0,
+                        'jump_downward_frames': 0,
+                        'jump_airborne_start_frame': None,
                     }
                 
                 # Update current frame stats
@@ -64,20 +77,91 @@ class PlayerStatsTracker:
                 
                 # Calculate acceleration
                 if len(stats['speeds']) >= 2:
-                    speed_change = stats['speeds'][-1] - stats['speeds'][-2]
-                    acceleration = abs(speed_change / self.frame_time)  # km/h per second
+                    # Convert km/h delta to m/s^2 for physically meaningful acceleration values.
+                    speed_change_ms = (stats['speeds'][-1] - stats['speeds'][-2]) / 3.6
+                    acceleration = abs(speed_change_ms / self.frame_time)
                     stats['accelerations'].append(acceleration)
                     stats['acceleration'] = acceleration
                 
-                # Detect jumps (significant vertical movement)
+                # Detect jumps using a conservative state machine so one jump is counted once.
                 if len(stats['positions']) >= 2:
                     prev_pos = stats['positions'][-2]
                     curr_pos = stats['positions'][-1]
-                    vertical_change = abs(curr_pos[1] - prev_pos[1])
-                    
-                    # Jump detection threshold
-                    if vertical_change > 15:  # Pixels - adjust as needed
-                        stats['jump_count'] += 1
+                    current_y = float(curr_pos[1])
+                    prev_y = float(prev_pos[1])
+                    vertical_delta = current_y - prev_y
+
+                    bbox = track_info.get('bbox', [0, 0, 0, 0])
+                    bbox_height = max(1.0, float(bbox[3] - bbox[1]))
+                    stats['jump_motion_history'].append(current_y)
+                    if len(stats['jump_motion_history']) > self.jump_window_size:
+                        stats['jump_motion_history'].pop(0)
+
+                    recent_history = stats['jump_motion_history'][-self.jump_window_size:]
+                    if recent_history:
+                        sorted_history = sorted(recent_history)
+                        baseline_index = int(0.75 * (len(sorted_history) - 1))
+                        baseline_y = float(sorted_history[baseline_index])
+                    else:
+                        baseline_y = current_y
+
+                    if stats['jump_baseline_y'] is None:
+                        stats['jump_baseline_y'] = baseline_y
+                    else:
+                        stats['jump_baseline_y'] = 0.85 * stats['jump_baseline_y'] + 0.15 * baseline_y
+
+                    lift_threshold = max(10.0, 0.14 * bbox_height)
+                    landing_threshold = max(6.0, 0.08 * bbox_height)
+                    baseline_y = stats['jump_baseline_y']
+                    lift_amount = baseline_y - current_y
+
+                    if vertical_delta < 0:
+                        stats['jump_upward_frames'] += 1
+                        stats['jump_downward_frames'] = 0
+                    elif vertical_delta > 0:
+                        stats['jump_downward_frames'] += 1
+                        stats['jump_upward_frames'] = 0
+                    else:
+                        stats['jump_upward_frames'] = 0
+                        stats['jump_downward_frames'] = 0
+
+                    if stats['jump_state'] == 'ground':
+                        if (
+                            lift_amount >= lift_threshold
+                            and stats['jump_upward_frames'] >= self.jump_confirm_frames
+                            and (frame_num - stats['last_jump_frame']) >= self.jump_cooldown_frames
+                        ):
+                            stats['jump_state'] = 'airborne'
+                            stats['jump_airborne_start_frame'] = frame_num
+                            stats['jump_peak_y'] = current_y
+                    else:
+                        if stats['jump_peak_y'] is None:
+                            stats['jump_peak_y'] = current_y
+                        else:
+                            stats['jump_peak_y'] = min(stats['jump_peak_y'], current_y)
+
+                        airborne_frames = 0
+                        if stats['jump_airborne_start_frame'] is not None:
+                            airborne_frames = frame_num - stats['jump_airborne_start_frame']
+
+                        returned_to_ground = lift_amount <= landing_threshold
+                        sustained_descent = stats['jump_downward_frames'] >= self.jump_landing_frames
+
+                        if airborne_frames >= self.jump_min_airborne_frames and returned_to_ground and sustained_descent:
+                            stats['jump_count'] += 1
+                            stats['last_jump_frame'] = frame_num
+                            stats['jump_state'] = 'ground'
+                            stats['jump_airborne_start_frame'] = None
+                            stats['jump_peak_y'] = None
+                            stats['jump_upward_frames'] = 0
+                            stats['jump_downward_frames'] = 0
+                        elif lift_amount < (landing_threshold * 0.5) and airborne_frames > 0 and stats['jump_downward_frames'] >= self.jump_landing_frames:
+                            # If the motion collapses quickly without enough airtime, reset without counting.
+                            stats['jump_state'] = 'ground'
+                            stats['jump_airborne_start_frame'] = None
+                            stats['jump_peak_y'] = None
+                            stats['jump_upward_frames'] = 0
+                            stats['jump_downward_frames'] = 0
                 
                 # Calculate stamina (decreases with high activity)
                 if stats['current_speed'] > 15:

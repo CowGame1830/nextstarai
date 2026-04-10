@@ -48,9 +48,11 @@ class CameraMovementEstimator():
         # Read the stub 
         if read_from_stub and stub_path is not None and os.path.exists(stub_path):
             with open(stub_path,'rb') as f:
-                return pickle.load(f)
+                cached = pickle.load(f)
+                if isinstance(cached, list) and len(cached) == len(frames):
+                    return cached
 
-        camera_movement = [[0,0]]*len(frames)
+        camera_movement = [[0,0] for _ in range(len(frames))]
 
         old_gray = cv2.cvtColor(frames[0],cv2.COLOR_BGR2GRAY)
         old_features = cv2.goodFeaturesToTrack(old_gray,**self.features)
@@ -88,20 +90,8 @@ class CameraMovementEstimator():
 
         for frame_num, frame in enumerate(frames):
             try:
-                # Create one output copy and draw the overlay on it directly.
+                # Keep frame output unchanged; camera movement is still used internally for position adjustment.
                 frame = frame.copy()
-                cv2.rectangle(frame,(0,0),(500,100),(255,255,255),-1)
-                alpha =0.6
-                cv2.addWeighted(frame,alpha,frames[frame_num],1-alpha,0,frame)
-
-                # Check if frame_num is within camera_movement_per_frame bounds
-                if frame_num < len(camera_movement_per_frame):
-                    x_movement, y_movement = camera_movement_per_frame[frame_num]
-                else:
-                    x_movement, y_movement = 0, 0  # Default to no movement if out of bounds
-                    
-                frame = cv2.putText(frame,f"Camera Movement X: {x_movement:.2f}",(10,30), cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,0),3)
-                frame = cv2.putText(frame,f"Camera Movement Y: {y_movement:.2f}",(10,60), cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,0),3)
 
                 output_frames.append(frame)
                 

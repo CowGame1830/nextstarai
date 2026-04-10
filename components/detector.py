@@ -30,25 +30,41 @@ def detect_id_switch(tracks, min_continuous_frames=30):
     return False, None, set()
 
 
-def detect_selected_players_disappeared(tracks, selected_player_ids, start_frame=0):
-    """Check if selected player IDs disappear during video processing.
-    
-    Returns: (disappeared, frame_num_when_disappeared)
+def detect_selected_players_disappeared(
+    tracks,
+    selected_player_ids,
+    start_frame=0,
+    max_missing_frames=12,
+    min_presence_frames=8,
+):
+    """Check if selected player IDs truly disappeared (not short occlusion).
+
+    Returns: (disappeared, frame_num_when_disappearance_started)
     """
     if not selected_player_ids:
         return False, None
-    
+
     selected_set = set(int(pid) for pid in selected_player_ids)
-    
+    presence_frames = 0
+    missing_streak = 0
+
     for frame_num in range(start_frame, len(tracks['players'])):
         frame_players = tracks['players'][frame_num]
         frame_player_ids = set(frame_players.keys())
-        
-        # Check if any selected players exist in this frame
         selected_in_frame = selected_set & frame_player_ids
-        
-        # If none of the selected players are in frame, it's a disappearance
-        if len(selected_in_frame) == 0 and frame_num > start_frame:
-            return True, frame_num
-    
+
+        if selected_in_frame:
+            presence_frames += 1
+            missing_streak = 0
+            continue
+
+        # Avoid false positives before the selected player has been reliably visible.
+        if presence_frames < max(1, int(min_presence_frames)):
+            continue
+
+        missing_streak += 1
+        if missing_streak >= max(1, int(max_missing_frames)):
+            disappearance_start = frame_num - missing_streak + 1
+            return True, disappearance_start
+
     return False, None

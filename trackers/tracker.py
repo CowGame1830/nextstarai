@@ -1,14 +1,151 @@
 from ultralytics import YOLO
-import supervision as sv
 import pickle
 import os
 import numpy as np
 import pandas as pd
 import cv2
 from scipy.optimize import linear_sum_assignment
+from collections import deque
 import sys 
 sys.path.append('../')
 from utils import get_center_of_bbox, get_bbox_width, get_foot_position
+
+try:
+    import supervision as sv
+    SUPERVISION_AVAILABLE = True
+except Exception:
+    SUPERVISION_AVAILABLE = False
+
+    def _bbox_iou(box_a, box_b):
+        ax1, ay1, ax2, ay2 = box_a
+        bx1, by1, bx2, by2 = box_b
+
+        inter_x1 = max(ax1, bx1)
+        inter_y1 = max(ay1, by1)
+        inter_x2 = min(ax2, bx2)
+        inter_y2 = min(ay2, by2)
+
+        inter_w = max(0.0, inter_x2 - inter_x1)
+        inter_h = max(0.0, inter_y2 - inter_y1)
+        inter_area = inter_w * inter_h
+
+        area_a = max(0.0, (ax2 - ax1)) * max(0.0, (ay2 - ay1))
+        area_b = max(0.0, (bx2 - bx1)) * max(0.0, (by2 - by1))
+        union = area_a + area_b - inter_area
+
+        if union <= 0:
+            return 0.0
+        return inter_area / union
+
+    class _SimpleDetections:
+        def __init__(self, xyxy=None, confidence=None, class_id=None):
+            self.xyxy = xyxy
+            self.confidence = confidence
+            self.class_id = class_id
+
+        @classmethod
+        def from_ultralytics(cls, detection):
+            boxes = []
+            confidences = []
+            class_ids = []
+
+            result_boxes = getattr(detection, "boxes", None)
+            if result_boxes is None:
+                return cls.empty()
+
+            xyxy = getattr(result_boxes, "xyxy", None)
+            conf = getattr(result_boxes, "conf", None)
+            cls_ids = getattr(result_boxes, "cls", None)
+
+            if xyxy is None:
+                return cls.empty()
+
+            boxes = xyxy.cpu().numpy() if hasattr(xyxy, "cpu") else np.asarray(xyxy)
+            if conf is not None:
+                confidences = conf.cpu().numpy() if hasattr(conf, "cpu") else np.asarray(conf)
+            else:
+                confidences = np.ones(len(boxes), dtype=np.float32)
+            if cls_ids is not None:
+                class_ids = cls_ids.cpu().numpy().astype(np.int32) if hasattr(cls_ids, "cpu") else np.asarray(cls_ids, dtype=np.int32)
+            else:
+                class_ids = np.zeros(len(boxes), dtype=np.int32)
+
+            return cls(
+                xyxy=np.asarray(boxes, dtype=np.float32),
+                confidence=np.asarray(confidences, dtype=np.float32),
+                class_id=np.asarray(class_ids, dtype=np.int32),
+            )
+
+        @classmethod
+        def empty(cls):
+            return cls(
+                xyxy=np.zeros((0, 4), dtype=np.float32),
+                confidence=np.zeros((0,), dtype=np.float32),
+                class_id=np.zeros((0,), dtype=np.int32),
+            )
+
+        def __len__(self):
+            return 0 if self.xyxy is None else len(self.xyxy)
+
+        def __getitem__(self, item):
+            return _SimpleDetections(
+                xyxy=self.xyxy[item],
+                confidence=self.confidence[item] if self.confidence is not None else None,
+                class_id=self.class_id[item] if self.class_id is not None else None,
+            )
+
+    class _SimpleByteTrack:
+        def __init__(self, *args, **kwargs):
+            self.next_track_id = 1
+            self.active_tracks = []
+
+        def update_with_detections(self, detections):
+            if detections is None or detections.xyxy is None or len(detections.xyxy) == 0:
+                self.active_tracks = []
+                return []
+
+            outputs = []
+            updated_tracks = []
+            used_track_indices = set()
+
+            for det_index, bbox in enumerate(detections.xyxy):
+                class_id = int(detections.class_id[det_index]) if detections.class_id is not None and len(detections.class_id) > det_index else -1
+                best_track_index = None
+                best_iou = 0.0
+
+                for track_index, track in enumerate(self.active_tracks):
+                    if track_index in used_track_indices:
+                        continue
+                    if track["class_id"] != class_id:
+                        continue
+                    iou = _bbox_iou(track["bbox"], bbox)
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_track_index = track_index
+
+                if best_track_index is not None and best_iou >= 0.2:
+                    track_id = self.active_tracks[best_track_index]["track_id"]
+                    used_track_indices.add(best_track_index)
+                else:
+                    track_id = self.next_track_id
+                    self.next_track_id += 1
+
+                track_record = {
+                    "bbox": np.asarray(bbox, dtype=np.float32),
+                    "class_id": class_id,
+                    "track_id": track_id,
+                }
+                updated_tracks.append(track_record)
+                outputs.append([float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]), class_id, track_id])
+
+            self.active_tracks = updated_tracks
+            return outputs
+
+    class _SimpleSVNamespace:
+        Detections = _SimpleDetections
+        ByteTrack = _SimpleByteTrack
+
+    sv = _SimpleSVNamespace()
 
 # NMS imports
 try:
@@ -17,13 +154,33 @@ except ImportError:
     nms = None
 
 class Tracker:
-    def __init__(self, model_path, frame_rate=24, detection_conf=0.35, imgsz=1280, batch_size=20, nms_threshold=0.4):
+    def __init__(
+        self,
+        model_path,
+        frame_rate=24,
+        detection_conf=0.35,
+        imgsz=1280,
+        batch_size=20,
+        nms_threshold=0.4,
+        min_ball_conf=0.20,
+    ):
         self.model = YOLO(model_path)
+
         self.frame_rate = frame_rate
         self.detection_conf = float(detection_conf)  # Increased from 0.1 to 0.35 for better confidence
         self.imgsz = int(imgsz)
         self.batch_size = int(batch_size)
         self.nms_threshold = float(nms_threshold)  # IoU threshold for NMS, reduced to 0.4 for stricter NMS
+        self.min_ball_conf = float(min_ball_conf)
+
+        # Keep player/goalkeeper/referee/ball IDs aligned with the rest of the pipeline.
+        self.class_name_to_id = {
+            "player": 0,
+            "goalkeeper": 1,
+            "referee": 2,
+            "ball": 3,
+        }
+        self.class_id_to_name = {v: k for k, v in self.class_name_to_id.items()}
 
         # Configure ByteTrack for stronger ID persistence under short occlusions.
         try:
@@ -165,8 +322,15 @@ class Tracker:
 
     def _predict_bbox(self, memory_item):
         bbox = memory_item["bbox"]
-        velocity = memory_item.get("velocity", (0.0, 0.0))
-        vx, vy = velocity
+        history = memory_item.get("history")
+        if history is not None and len(history) >= 2:
+            recent_boxes = list(history)[-3:]
+            centers = [get_center_of_bbox(box) for box in recent_boxes]
+            vx = float(np.mean([centers[i][0] - centers[i - 1][0] for i in range(1, len(centers))]))
+            vy = float(np.mean([centers[i][1] - centers[i - 1][1] for i in range(1, len(centers))]))
+        else:
+            velocity = memory_item.get("velocity", (0.0, 0.0))
+            vx, vy = velocity
         return [bbox[0] + vx, bbox[1] + vy, bbox[2] + vx, bbox[3] + vy]
 
     def _match_score(self, predicted_bbox, current_bbox):
@@ -184,6 +348,15 @@ class Tracker:
     def _pick_ball_candidate(self, candidate_boxes, candidate_scores, previous_ball_bbox=None):
         if len(candidate_boxes) == 0:
             return None
+
+        # Filter low-confidence candidates first to reduce false possession assignments.
+        candidate_scores = np.asarray(candidate_scores, dtype=np.float32)
+        keep = candidate_scores >= self.min_ball_conf
+        if not np.any(keep):
+            return None
+
+        candidate_boxes = candidate_boxes[keep]
+        candidate_scores = candidate_scores[keep]
 
         best_idx = 0
         best_score = -1.0
@@ -233,6 +406,49 @@ class Tracker:
         if best_stable_id is not None and best_score >= match_threshold:
             return best_stable_id
         return None
+
+    def _confirm_stable_id_with_lookahead(
+        self,
+        tracks,
+        curr_box,
+        stable_id,
+        frame_num,
+        lookahead_frames=10,
+        match_threshold=0.20,
+    ):
+        """Confirm a reused stable ID by checking the next few frames for a consistent continuation."""
+        future_hits = 0
+        future_checks = 0
+        last_known_box = curr_box
+
+        for future_frame_num in range(frame_num + 1, min(len(tracks["players"]), frame_num + lookahead_frames + 1)):
+            future_players = tracks["players"][future_frame_num]
+            if not future_players:
+                continue
+
+            future_checks += 1
+            best_future_score = -1.0
+            best_future_box = None
+
+            for _, future_info in future_players.items():
+                future_box = future_info.get("bbox")
+                if future_box is None:
+                    continue
+
+                score = self._match_score(last_known_box, future_box)
+                if score > best_future_score:
+                    best_future_score = score
+                    best_future_box = future_box
+
+            if best_future_box is not None and best_future_score >= match_threshold:
+                future_hits += 1
+                last_known_box = best_future_box
+
+        if future_checks == 0:
+            return True
+
+        # Require at least a small run of consistent future matches before reusing the ID.
+        return future_hits >= 3 or (future_hits / future_checks) >= 0.5
 
     def stabilize_player_ids(self, tracks, max_gap=18, match_threshold=0.28):
         """Reduce ID switches by globally matching current players to stable memory."""
@@ -301,10 +517,14 @@ class Tracker:
                     merged_info["raw_track_id"] = int(raw_id)
                     remapped_players[stable_id] = merged_info
 
+                    history = deque(stable_memory[stable_id].get("history", []), maxlen=5)
+                    history.append(curr_box)
+
                     stable_memory[stable_id] = {
                         "bbox": curr_box,
                         "last_frame": frame_num,
                         "velocity": (vx, vy),
+                        "history": history,
                     }
                     raw_to_stable_recent[raw_id] = {"stable_id": stable_id, "last_frame": frame_num}
 
@@ -328,6 +548,17 @@ class Tracker:
                 if stable_id is None:
                     stable_id = stable_next_id
                     stable_next_id += 1
+                else:
+                    if not self._confirm_stable_id_with_lookahead(
+                        tracks=tracks,
+                        curr_box=curr_box,
+                        stable_id=stable_id,
+                        frame_num=frame_num,
+                        lookahead_frames=10,
+                        match_threshold=0.20,
+                    ):
+                        stable_id = stable_next_id
+                        stable_next_id += 1
 
                 merged_info = dict(info)
                 merged_info["raw_track_id"] = int(raw_id)
@@ -339,13 +570,17 @@ class Tracker:
                     curr_center = get_center_of_bbox(curr_box)
                     vx = float(curr_center[0] - prev_center[0])
                     vy = float(curr_center[1] - prev_center[1])
+                    history = deque(prev_mem.get("history", []), maxlen=5)
+                    history.append(curr_box)
                 else:
                     vx, vy = 0.0, 0.0
+                    history = deque([curr_box], maxlen=5)
 
                 stable_memory[stable_id] = {
                     "bbox": curr_box,
                     "last_frame": frame_num,
                     "velocity": (vx, vy),
+                    "history": history,
                 }
                 raw_to_stable_recent[raw_id] = {"stable_id": stable_id, "last_frame": frame_num}
 
@@ -388,6 +623,37 @@ class Tracker:
             detections += detections_batch
         return detections
 
+    def _normalize_class_name(self, class_name):
+        text = str(class_name or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if text in ("goal_keeper", "keeper"):
+            return "goalkeeper"
+        return text
+
+    def _resolve_class_ids(self, cls_names):
+        normalized = {
+            self._normalize_class_name(name): class_id
+            for class_id, name in cls_names.items()
+        }
+
+        return {
+            "player": normalized.get("player") or normalized.get("person"),
+            "goalkeeper": normalized.get("goalkeeper") or normalized.get("goal_keeper") or normalized.get("keeper"),
+            "referee": normalized.get("referee"),
+            "ball": normalized.get("ball") or normalized.get("sports_ball"),
+            "normalized": normalized,
+        }
+
+    def _bbox_to_list(self, bbox):
+        if bbox is None:
+            return None
+        if hasattr(bbox, "tolist"):
+            bbox = bbox.tolist()
+        elif isinstance(bbox, tuple):
+            bbox = list(bbox)
+        elif not isinstance(bbox, list):
+            bbox = [bbox]
+        return [float(value) for value in bbox]
+
     def get_object_tracks(self, frames, read_from_stub=False, stub_path=None):
         
         if read_from_stub and stub_path is not None and os.path.exists(stub_path):
@@ -405,9 +671,15 @@ class Tracker:
 
         previous_ball_bbox = None
 
-        for frame_num, detection in enumerate(detections):
+        for frame_num in range(len(frames)):
+            detection = detections[frame_num]
             cls_names = detection.names
-            cls_names_inv = {v:k for k,v in cls_names.items()}
+            class_ids = self._resolve_class_ids(cls_names)
+            cls_names_inv = {v: k for k, v in cls_names.items()}
+            player_class_id = class_ids["player"]
+            goalkeeper_class_id = class_ids["goalkeeper"]
+            referee_class_id = class_ids["referee"]
+            ball_class_id = class_ids["ball"]
 
             # Covert to supervision Detection format
             detection_supervision = sv.Detections.from_ultralytics(detection)
@@ -416,13 +688,13 @@ class Tracker:
             detection_supervision = self._apply_nms_to_detections(detection_supervision, self.nms_threshold)
 
             # Convert GoalKeeper to player object
-            for object_ind , class_id in enumerate(detection_supervision.class_id):
-                if cls_names[class_id] == "goalkeeper":
-                    detection_supervision.class_id[object_ind] = cls_names_inv["player"]
+            if goalkeeper_class_id is not None and player_class_id is not None and detection_supervision.class_id is not None:
+                for object_ind, class_id in enumerate(detection_supervision.class_id):
+                    if int(class_id) == int(goalkeeper_class_id):
+                        detection_supervision.class_id[object_ind] = int(player_class_id)
 
             # FILTER: Remove referees (no longer using them)
-            if "referee" in cls_names_inv:
-                referee_class_id = cls_names_inv["referee"]
+            if referee_class_id is not None:
                 referee_mask = detection_supervision.class_id != referee_class_id
                 detection_supervision = detection_supervision[referee_mask]
 
@@ -434,18 +706,35 @@ class Tracker:
             tracks["ball"].append({})
 
             for frame_detection in detection_with_tracks:
-                bbox = frame_detection[0].tolist()
-                cls_id = frame_detection[3]
-                track_id = frame_detection[4]
+                if isinstance(frame_detection, dict):
+                    bbox_value = frame_detection.get("bbox")
+                    if bbox_value is None:
+                        bbox_value = frame_detection.get("xyxy")
+                    bbox = self._bbox_to_list(bbox_value)
+                    cls_id = frame_detection.get("class_id", frame_detection.get("cls_id"))
+                    track_id = frame_detection.get("track_id")
+                else:
+                    frame_values = frame_detection.tolist() if hasattr(frame_detection, "tolist") else list(frame_detection)
+                    bbox = self._bbox_to_list(frame_values[:4])
+                    cls_id = frame_values[4] if len(frame_values) > 4 else None
+                    track_id = frame_values[5] if len(frame_values) > 5 else None
 
-                if cls_id == cls_names_inv['player']:
+                if bbox is None or cls_id is None or track_id is None:
+                    continue
+
+                cls_id = int(cls_id)
+                track_id = int(track_id)
+
+                if player_class_id is None:
+                    if ball_class_id is None or cls_id != ball_class_id:
+                        tracks["players"][frame_num][track_id] = {"bbox": bbox}
+                elif cls_id == player_class_id:
                     tracks["players"][frame_num][track_id] = {"bbox":bbox}
                 
                 # Skip referees - removed from tracking
                 # if cls_id == cls_names_inv['referee']:
                 #     tracks["referees"][frame_num][track_id] = {"bbox":bbox}
             
-            ball_class_id = cls_names_inv.get('ball')
             if ball_class_id is not None and detection_supervision.class_id is not None:
                 class_ids = detection_supervision.class_id
                 confidence = detection_supervision.confidence
@@ -458,7 +747,7 @@ class Tracker:
                     selected_ball = self._pick_ball_candidate(ball_boxes, ball_scores, previous_ball_bbox)
 
                     if selected_ball is not None:
-                        selected_ball = selected_ball.tolist()
+                        selected_ball = self._bbox_to_list(selected_ball)
                         tracks["ball"][frame_num][1] = {"bbox": selected_ball}
                         previous_ball_bbox = selected_ball
 
@@ -561,13 +850,8 @@ class Tracker:
 
     def draw_annotations(self,video_frames, tracks,team_ball_control):
         output_video_frames= []
-        if team_ball_control is not None and len(team_ball_control) > 0:
-            team_ball_control_array = np.asarray(team_ball_control)
-            self._team_1_prefix_counts = np.cumsum(team_ball_control_array == 1)
-            self._team_2_prefix_counts = np.cumsum(team_ball_control_array == 2)
-        else:
-            self._team_1_prefix_counts = None
-            self._team_2_prefix_counts = None
+        self._team_1_prefix_counts = None
+        self._team_2_prefix_counts = None
 
         for frame_num, frame in enumerate(video_frames):
             frame = frame.copy()
@@ -592,9 +876,6 @@ class Tracker:
             for track_id, ball in ball_dict.items():
                 frame = self.draw_traingle(frame, ball["bbox"],(0,255,0))
 
-
-            # Draw Team Ball Control
-            frame = self.draw_team_ball_control(frame, frame_num, team_ball_control)
 
             output_video_frames.append(frame)
 
