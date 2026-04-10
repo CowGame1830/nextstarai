@@ -10,12 +10,12 @@ torchaudio==2.6.0+cpu
 ultralytics==8.4.21
 
 # Computer vision and tracking
-opencv-python==4.13.0.92
+opencv-python==4.8.1.78
 supervision==0.27.0.post1
 mediapipe==0.10.32
 
 # Data processing and analytics
-numpy==2.3.5
+numpy<2
 scipy==1.17.1
 pandas==3.0.1
 scikit-learn==1.8.0

@@ -109,7 +109,11 @@ except Exception:
             used_track_indices = set()
 
             for det_index, bbox in enumerate(detections.xyxy):
-                class_id = int(detections.class_id[det_index]) if detections.class_id is not None and len(detections.class_id) > det_index else -1
+                if detections.class_id is not None and len(detections.class_id) > det_index:
+                    val = detections.class_id[det_index]
+                    class_id = int(val.item() if hasattr(val, 'item') else val)
+                else:
+                    class_id = -1
                 best_track_index = None
                 best_iou = 0.0
 
@@ -326,8 +330,10 @@ class Tracker:
         if history is not None and len(history) >= 2:
             recent_boxes = list(history)[-3:]
             centers = [get_center_of_bbox(box) for box in recent_boxes]
-            vx = float(np.mean([centers[i][0] - centers[i - 1][0] for i in range(1, len(centers))]))
-            vy = float(np.mean([centers[i][1] - centers[i - 1][1] for i in range(1, len(centers))]))
+            mean_vx = np.mean([centers[i][0] - centers[i - 1][0] for i in range(1, len(centers))])
+            mean_vy = np.mean([centers[i][1] - centers[i - 1][1] for i in range(1, len(centers))])
+            vx = float(mean_vx.item() if hasattr(mean_vx, 'item') else mean_vx)
+            vy = float(mean_vy.item() if hasattr(mean_vy, 'item') else mean_vy)
         else:
             velocity = memory_item.get("velocity", (0.0, 0.0))
             vx, vy = velocity
@@ -500,7 +506,8 @@ class Tracker:
                 row_ind, col_ind = linear_sum_assignment(-score_matrix)
 
                 for i, j in zip(row_ind, col_ind):
-                    score = float(score_matrix[i, j])
+                    score_val = score_matrix[i, j]
+                    score = float(score_val.item() if hasattr(score_val, 'item') else score_val)
                     if score < match_threshold:
                         continue
 
