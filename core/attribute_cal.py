@@ -50,18 +50,20 @@ def calculate_work_rate(avg_speed_kmh, sprint_percentage):
     """
     Calculates Work Rate attribute (10-200) based on effort and intensity.
 
-    World-class benchmarks:
-      - Average Speed: 20 km/h baseline for elite intensity
-      - Sprint Percentage: 15% of total time as elite frequency
+    Benchmarks:
+      - Elite (FM 20)      : 20.0 km/h avg, 15.0% sprint → 200
+      - High (FM 16)       : 17.0 km/h avg, 12.0% sprint → ~166
+      - Average (FM 10)    : 12.0 km/h avg, 7.5% sprint → ~114
+      - Low (FM 5)         :  8.0 km/h avg, 3.0% sprint → ~67
 
     Inputs:
       avg_speed_kmh    - Average movement speed during the match (km/h)
       sprint_percentage - Proportion of time spent sprinting (0.0 – 1.0)
                           e.g. 15% → 0.15
 
-    Intensity  = min(1.0, avg_speed_kmh / 20.0)
-    Frequency  = min(1.0, sprint_percentage / 0.15)
-    Formula    = ((intensity + frequency) / 2) * 190 + 10
+    Formula:
+      Intensity  = min(1.0, avg_speed_kmh / 20.0)
+      Frequency  = min(1.0, sprint_percentage / 0.15)
     """
     intensity  = min(1.0, avg_speed_kmh / 20.0)
     frequency  = min(1.0, sprint_percentage / 0.15)
@@ -95,6 +97,20 @@ if __name__ == "__main__":
     print(f"Accel @ 6.5 m/s²  : {calculate_acceleration(6.5):>4} (expect 180)")
     print(f"Accel @ 8.5 m/s²  : {calculate_acceleration(8.5):>4} (expect 200)")
     
-    # Check Work Rate & Stamina (unchanged)
-    print(f"Work Intensity=1.0 freq=1.0: {calculate_work_rate(20, 0.15):>4} (expect 200)")
+    # --- Work Rate Benchmarks ---
+    print("\n--- Work Rate Benchmarks ---")
+    # Elite Work Rate (FM 20 Equivalent - Bernardo Silva / Caicedo level)
+    print(f"Elite   (I=1.00, F=1.00): {calculate_work_rate(20.0, 0.15):>4} (expect 200)")
+
+    # High Work Rate (FM 16 Equivalent - Very energetic winger/fullback)
+    print(f"High    (I=0.85, F=0.80): {calculate_work_rate(17.0, 0.12):>4} (expect ~166)")
+
+    # Average Professional (FM 10 Equivalent - Standard movement)
+    print(f"Average (I=0.60, F=0.50): {calculate_work_rate(12.0, 0.075):>4} (expect ~114)")
+
+    # Low Intensity (FM 5 Equivalent - Static target man or deep defender)
+    print(f"Low     (I=0.40, F=0.20): {calculate_work_rate(8.0, 0.03):>4} (expect ~67)")
+
+    # --- Stamina Check ---
+    print("\n--- Stamina Check ---")
     print(f"Stamina @ 50%: {calculate_stamina(50):>4} (expect 105)")

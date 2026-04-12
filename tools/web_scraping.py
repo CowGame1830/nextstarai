@@ -1,208 +1,296 @@
-import json
+import csv
 import time
 import random
 import os
+import unicodedata
+import re
+
 from playwright.sync_api import sync_playwright
 
-# Configuration
-PLAYER_NAMES_JSON = "player_data/player.json"
-OUTPUT_JSON = "player_data/fm_scraped_attributes.json"
-SESSION_DIR = "browser_session" # Stores your Cloudflare tokens/cookies
+# ─── Configuration ────────────────────────────────────────────────────────────
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR    = os.path.join(BASE_DIR, "..", "player_data")
 
-def load_players():
-    # Adjusted path to check locally for player_data
-    if not os.path.exists(PLAYER_NAMES_JSON):
-        # Try one level up if not found locally
-        alt_path = os.path.join("..", PLAYER_NAMES_JSON)
-        if os.path.exists(alt_path):
-            with open(alt_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        print(f"Error: {PLAYER_NAMES_JSON} not found!")
-        return []
-    with open(PLAYER_NAMES_JSON, "r", encoding="utf-8") as f:
-        return json.load(f)
+INPUT_CSV   = os.path.join(DATA_DIR, "player_names_unique.csv")
+OUTPUT_CSV  = os.path.join(DATA_DIR, "player_names_unique_scraped.csv")
+SESSION_DIR = os.path.join(BASE_DIR, "..", "browser_session")
 
-def extract_attributes(page):
+# match_status values:
+#   "exact"        – CSV name matches page name
+#   "partial"      – names differ but we still saved the data (review recommended)
+#   "first_result" – no exact search result found; clicked first item
+#   "not_found"    – profile page never appeared
+CSV_COLUMNS = [
+    "Player", "matched_name", "match_status",
+    "Stamina", "Pace", "Acceleration", "Work Rate", "source_url",
+]
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def normalize(text: str) -> str:
+    """Lowercase, strip accents, remove non-alphanumeric for loose comparison."""
+    text = text.lower().strip()
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    text = re.sub(r"[^a-z0-9 ]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def names_match(csv_name: str, page_name: str) -> bool:
+    """Return True if the two names are the same after normalization."""
+    return normalize(csv_name) == normalize(page_name)
+
+
+def load_player_names() -> list[str]:
+    names = []
+    if not os.path.exists(INPUT_CSV):
+        print(f"ERROR: {INPUT_CSV} not found!")
+        return names
+    with open(INPUT_CSV, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            name = row.get("Player", "").strip()
+            if name:
+                names.append(name)
+    print(f"Loaded {len(names)} player names from input CSV.")
+    return names
+
+
+def load_checkpoint() -> dict[str, dict]:
     """
-    Extracts the 4 target attributes from the current player page.
+    Read OUTPUT_CSV; return {player_name: row} for rows that already have
+    a match_status set (meaning they were processed).
     """
-    target_keys = ["Stamina", "Pace", "Acceleration", "Work Rate"]
-    extracted = {}
-    
-    for key in target_keys:
+    done = {}
+    if not os.path.exists(OUTPUT_CSV):
+        return done
+    with open(OUTPUT_CSV, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            name   = row.get("Player", "").strip()
+            status = row.get("match_status", "").strip()
+            if name and status:        # any status means already processed
+                done[name] = row
+    print(f"Checkpoint: {len(done)} players already processed.")
+    return done
+
+
+def write_checkpoint(all_names: list[str], results: dict[str, dict]) -> None:
+    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        writer.writeheader()
+        for name in all_names:
+            entry = results.get(name, {})
+            writer.writerow({
+                "Player":        name,
+                "matched_name":  entry.get("matched_name", ""),
+                "match_status":  entry.get("match_status", ""),
+                "Stamina":       entry.get("Stamina", ""),
+                "Pace":          entry.get("Pace", ""),
+                "Acceleration":  entry.get("Acceleration", ""),
+                "Work Rate":     entry.get("Work Rate", ""),
+                "source_url":    entry.get("source_url", ""),
+            })
+
+
+def get_page_player_name(page) -> str:
+    """
+    Try to read the player's displayed name from the profile page.
+    Returns empty string if not found.
+    """
+    # fmplayer.net typically shows the name in an <h1> or a heading element
+    for selector in ["h1", "h1.player-name", ".player-name", "[class*='player-name']"]:
         try:
-            # Selector logic: Find the <li> containing the key name, then get the value span
-            selector = f'li.player-attr-list-item:has-text("{key}") span.player-attr-list-item-value'
-            element = page.locator(selector).first
-            if element.is_visible(timeout=5000):
-                value = element.text_content().strip()
-                extracted[key] = int(value) if value.isdigit() else value
-            else:
-                extracted[key] = None
+            el = page.locator(selector).first
+            if el.is_visible(timeout=2000):
+                text = el.text_content().strip()
+                if text:
+                    return text
         except Exception:
-            extracted[key] = None
-            
-    return extracted
+            pass
+    return ""
+
+
+def extract_attributes(page) -> dict:
+    attrs = {}
+    for key in ["Stamina", "Pace", "Acceleration", "Work Rate"]:
+        try:
+            selector = f'li.player-attr-list-item:has-text("{key}") span.player-attr-list-item-value'
+            el = page.locator(selector).first
+            if el.is_visible(timeout=5000):
+                val = el.text_content().strip()
+                attrs[key] = int(val) if val.isdigit() else val
+            else:
+                attrs[key] = None
+        except Exception:
+            attrs[key] = None
+    return attrs
+
 
 def run_scraping():
-    players = load_players()
-    if not players:
-        print("No players found to process.")
+    all_names = load_player_names()
+    if not all_names:
         return
-        
-    print(f"Loaded {len(players)} players.")
-    # Load existing results for checkpointing
-    scraped_results = []
-    if os.path.exists(OUTPUT_JSON):
-        try:
-            with open(OUTPUT_JSON, "r", encoding="utf-8") as f:
-                scraped_results = json.load(f)
-            print(f"Loaded {len(scraped_results)} existing results from checkpoint.")
-        except Exception as e:
-            print(f"Error loading checkpoint: {e}")
-            scraped_results = []
 
-    already_scraped = {res["player_name"] for res in scraped_results if "player_name" in res}
+    results = load_checkpoint()
+    pending = [n for n in all_names if n not in results]
+    total   = len(all_names)
+    print(f"Total: {total} | Done: {total - len(pending)} | Remaining: {len(pending)}\n")
 
+    if not pending:
+        print("All players already processed!")
+        write_checkpoint(all_names, results)
+        return
 
     with sync_playwright() as p:
-        # 1. Open browser with persistent context
-        print(f"Opening browser... (Session data: {SESSION_DIR})")
+        print(f"Opening browser (session: {SESSION_DIR}) …")
         context = p.chromium.launch_persistent_context(
             user_data_dir=SESSION_DIR,
             headless=False,
-            args=["--disable-blink-features=AutomationControlled"]
+            args=["--disable-blink-features=AutomationControlled"],
         )
-        
+
         page = context.pages[0]
-        
-        print("Navigating to https://fmplayer.net/...")
+
         try:
             page.goto("https://fmplayer.net/", wait_until="load")
         except Exception as e:
-            print(f"Initial navigation error: {e}")
+            print(f"Navigation error: {e}")
 
-        # 2. Hybrid Manual Step: Wait for you to solve Cloudflare
-        print("\n" + "="*60)
-        print("ACTION REQUIRED: PLEASE SOLVE THE CLOUDFLARE CHALLENGE NOW.")
-        print("Once the home page loads, the script will resume automatically.")
-        print("="*60 + "\n")
-        
-        search_trigger_selector = 'span.cursor-text:has-text("search player or club")'
+        # ── Cloudflare gate ───────────────────────────────────────────────────
+        print("\n" + "=" * 60)
+        print("ACTION REQUIRED: SOLVE THE CLOUDFLARE CHALLENGE NOW.")
+        print("Script resumes automatically once the home page loads.")
+        print("=" * 60 + "\n")
+
+        search_trigger = 'span.cursor-text:has-text("search player or club")'
         try:
-            page.wait_for_selector(search_trigger_selector, timeout=0) 
-            print("\nVerification passed! Site detected. Starting automation...")
+            page.wait_for_selector(search_trigger, timeout=0)
+            print("Site verified. Starting automation …\n")
         except Exception as e:
-            print(f"An error occurred while waiting for site: {e}")
+            print(f"Error: {e}")
             context.close()
             return
 
-        # 3. Automated Search Loop
-        for i, player_name in enumerate(players):
-            if player_name in already_scraped:
-                continue
-            
-            print(f"\n[{i+1}/{len(players)}] Processing: {player_name}")
-            
+        modal = "#search-modal.show"
+
+        for idx, player_name in enumerate(pending, start=1):
+            done_so_far = total - len(pending) + idx
+            print(f"[{done_so_far}/{total}] {player_name}")
+
             try:
-                # 3a. Ensure we are ready to search
-                modal_selector = "#search-modal.show"
-                is_modal_open = page.is_visible(modal_selector)
-                
-                if not is_modal_open:
-                    # Only click the trigger if the modal isn't already open
-                    print("Opening search modal...")
-                    page.click(search_trigger_selector, timeout=10000)
-                
-                # Wait for the search modal to definitely be visible
-                page.wait_for_selector(modal_selector, timeout=10000)
-                
-                # 3b. Find input, clear it, and type
-                input_field = page.locator("#search-modal input").first
-                input_field.click() # Focus
-                # Select all and backspace to clear any previous text
+                # ── Open search modal ─────────────────────────────────────────
+                if not page.is_visible(modal):
+                    page.click(search_trigger, timeout=10000)
+                page.wait_for_selector(modal, timeout=10000)
+
+                # ── Type name ─────────────────────────────────────────────────
+                inp = page.locator("#search-modal input").first
+                inp.click()
                 page.keyboard.press("Control+A")
                 page.keyboard.press("Backspace")
-                
-                input_field.fill(player_name)
+                inp.fill(player_name)
                 time.sleep(random.uniform(0.6, 1.2))
-                input_field.press("Enter")
-                
-                # 3d. Check if we ARE on a player page or if we should click a result
-                is_on_profile = page.is_visible("li.player-attr-list-item", timeout=3000)
-                
-                if not is_on_profile:
-                    # 3c. Wait for search Results or direct Redirect
-                    try:
-                        # Give it a moment to load potential results in the modal
-                        page.wait_for_timeout(2000) 
-                        
-                        # Target the specific 'search-item-link'
-                        # Try exact match first
-                        result_link = page.locator(f'a.search-item-link:has(p.fw-bold:has-text("{player_name}"))').first
-                        
-                        if not result_link.is_visible(timeout=2000):
-                            # Fallback: Just click the first result if no exact match found
-                            print(f"Precise match not found for '{player_name}'. Clicking first available result...")
-                            result_link = page.locator('a.search-item-link').first
+                inp.press("Enter")
 
-                        if result_link.is_visible(timeout=5000):
-                            print(f"Clicking link for {player_name}...")
-                            result_link.click()
-                            # Wait for navigation/load
-                            page.wait_for_timeout(3000)
-                    except Exception as e:
-                        print(f"Note: Search selection step skipped or failed: {e}")
+                # ── Navigate to profile ───────────────────────────────────────
+                clicked_status = "exact"   # assume best case
+                on_profile = page.is_visible("li.player-attr-list-item", timeout=3000)
 
-                # Final check: Are we on the profile page now?
+                if not on_profile:
+                    page.wait_for_timeout(2000)
+
+                    # Try exact name match in results list
+                    exact_link = page.locator(
+                        f'a.search-item-link:has(p.fw-bold:has-text("{player_name}"))'
+                    ).first
+
+                    if exact_link.is_visible(timeout=2000):
+                        exact_link.click()
+                        clicked_status = "exact"
+                    else:
+                        # Fallback: first available result
+                        first_link = page.locator("a.search-item-link").first
+                        if first_link.is_visible(timeout=5000):
+                            print(f"  ! No exact result — clicking first result")
+                            first_link.click()
+                            clicked_status = "first_result"
+                        else:
+                            print(f"  ✗ No search results at all")
+                            results[player_name] = {"match_status": "not_found"}
+                            write_checkpoint(all_names, results)
+                            # reset
+                            page.keyboard.press("Escape")
+                            page.wait_for_timeout(500)
+                            page.goto("https://fmplayer.net/", wait_until="domcontentloaded")
+                            page.wait_for_selector(search_trigger, timeout=15000)
+                            time.sleep(random.uniform(2.0, 4.5))
+                            continue
+
+                    page.wait_for_timeout(3000)
+
+                # ── Extract data + check name match ───────────────────────────
                 try:
                     page.wait_for_selector("li.player-attr-list-item", timeout=10000)
-                    attributes = extract_attributes(page)
-                    attributes["player_name"] = player_name
-                    attributes["source_url"] = page.url
-                    print(f"Extracted: {attributes}")
-                    scraped_results.append(attributes)
-                    
-                    # Reset state: Go back home for the next search
-                    page.goto("https://fmplayer.net/", wait_until="domcontentloaded")
-                    page.wait_for_selector(search_trigger_selector)
-                    
-                    # Periodic save every 5 players
-                    if len(scraped_results) % 5 == 0:
-                        print(f"Saving progress... ({len(scraped_results)} players)")
-                        with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-                            json.dump(scraped_results, f, indent=4)
-                    
-                    # Human-like delay between players
-                    time.sleep(random.uniform(2.0, 5.0))
+
+                    page_name = get_page_player_name(page)
+                    attrs     = extract_attributes(page)
+                    attrs["source_url"]   = page.url
+                    attrs["matched_name"] = page_name
+
+                    # Determine final match_status
+                    if clicked_status == "first_result":
+                        attrs["match_status"] = "first_result"
+                    elif page_name and not names_match(player_name, page_name):
+                        attrs["match_status"] = "partial"
+                        print(f"  ⚠ Name mismatch — CSV: '{player_name}' | Page: '{page_name}'")
+                    else:
+                        attrs["match_status"] = "exact"
+
+                    print(f"  ✓ [{attrs['match_status']}] {attrs}")
+                    results[player_name] = attrs
+                    write_checkpoint(all_names, results)
 
                 except Exception:
-                    print(f"Could not find a profile page for {player_name} (timed out waiting for attributes).")
-                    # Close modal if it's still stuck open
-                    if page.is_visible(modal_selector):
+                    print(f"  ✗ Profile page not found — skipping")
+                    results[player_name] = {"match_status": "not_found"}
+                    write_checkpoint(all_names, results)
+                    if page.is_visible(modal):
                         page.keyboard.press("Escape")
-                        page.wait_for_timeout(1000)
-                
+                        page.wait_for_timeout(500)
+
+                # ── Go home for next player ───────────────────────────────────
+                page.goto("https://fmplayer.net/", wait_until="domcontentloaded")
+                page.wait_for_selector(search_trigger, timeout=15000)
+                time.sleep(random.uniform(2.0, 4.5))
+
             except Exception as e:
-                print(f"Error processing {player_name}: {e}")
-                # Emergency reset: close modal and/or go home
+                print(f"  ✗ Error: {e}")
                 try:
                     if page.is_visible("#search-modal.show"):
                         page.keyboard.press("Escape")
                     else:
                         page.goto("https://fmplayer.net/")
-                except:
+                        page.wait_for_selector(search_trigger, timeout=15000)
+                except Exception:
                     pass
                 continue
 
-        # 4. Save results to JSON
-        print(f"\nSaving results to {OUTPUT_JSON}...")
-        with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-            json.dump(scraped_results, f, indent=4)
+        # ── Summary ───────────────────────────────────────────────────────────
+        counts = {"exact": 0, "partial": 0, "first_result": 0, "not_found": 0}
+        for v in results.values():
+            s = v.get("match_status", "")
+            if s in counts:
+                counts[s] += 1
 
-        print("\nAll tasks complete!")
-        input("Press Enter to close the browser...")
+        print(f"\nFinished! Results:")
+        print(f"  ✓ Exact match   : {counts['exact']}")
+        print(f"  ⚠ Partial match : {counts['partial']}")
+        print(f"  ? First result  : {counts['first_result']}")
+        print(f"  ✗ Not found     : {counts['not_found']}")
+        print(f"\nCSV → {OUTPUT_CSV}")
+        input("\nPress Enter to close the browser …")
         context.close()
+
 
 if __name__ == "__main__":
     run_scraping()
