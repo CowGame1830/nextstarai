@@ -3,6 +3,7 @@ import numpy as np
 import json
 import os
 from datetime import datetime
+from collections import deque
 
 
 class PlayerStatsTracker:
@@ -12,6 +13,9 @@ class PlayerStatsTracker:
         self.frame_time = 1.0 / frame_rate  # Time per frame in seconds
         self.jump_cooldown_frames = max(4, int(0.35 * frame_rate))
         self.max_plausible_speed_kmh = 42.0
+        self.accel_smoothing_alpha = 0.45
+        self.accel_deadband_ms2 = 0.25
+        self.max_plausible_acceleration_ms2 = 6.5
         
     def update_player_stats(self, tracks):
         """Update statistics for all tracked players"""
@@ -23,15 +27,16 @@ class PlayerStatsTracker:
                 if player_id not in self.player_stats:
                     # Initialize new player stats
                     self.player_stats[player_id] = {
-                        'positions': [],
-                        'speeds': [],
-                        'accelerations': [],
+                        'positions': deque(maxlen=2),
                         'jump_count': 0,
                         'total_distance': 0.0,
                         'max_speed': 0.0,
                         'sprint_speed': 0.0,
                         'current_speed': 0.0,
                         'acceleration': 0.0,
+                        'max_acceleration': 0.0,
+                        'speed_sum': 0.0,
+                        'speed_count': 0,
                         'stamina_score': 100.0,
                         'sprint_time': 0.0,
                         'sprint_distance': 0.0,
@@ -60,9 +65,11 @@ class PlayerStatsTracker:
                         # track_info['speed'] is already in km/h from SpeedAndDistance_Estimator
                         current_speed = float(track_info['speed'])
                         current_speed = float(np.clip(current_speed, 0.0, self.max_plausible_speed_kmh))
-                        stats['speeds'].append(current_speed)
                         stats['current_speed'] = current_speed
                         stats['max_speed'] = max(stats['max_speed'], current_speed)
+                        stats['speed_sum'] += current_speed
+                        stats['speed_count'] += 1
+                        stats['avg_speed'] = stats['speed_sum'] / stats['speed_count']
                         
                         # Update sprint speed (speeds > 20 km/h)
                         if current_speed > 20:
@@ -76,9 +83,22 @@ class PlayerStatsTracker:
                             dt = frame_delta * self.frame_time
                             prev_speed_ms = stats['last_speed_for_accel'] / 3.6
                             curr_speed_ms = current_speed / 3.6
-                            acceleration = (curr_speed_ms - prev_speed_ms) / dt
-                            stats['accelerations'].append(acceleration)
+                            raw_acceleration = (curr_speed_ms - prev_speed_ms) / dt
+                            if abs(raw_acceleration) < self.accel_deadband_ms2:
+                                raw_acceleration = 0.0
+                            raw_acceleration = float(np.clip(
+                                raw_acceleration,
+                                -self.max_plausible_acceleration_ms2,
+                                self.max_plausible_acceleration_ms2,
+                            ))
+
+                            prev_acc = float(stats.get('acceleration', 0.0))
+                            acceleration = (
+                                self.accel_smoothing_alpha * raw_acceleration
+                                + (1.0 - self.accel_smoothing_alpha) * prev_acc
+                            )
                             stats['acceleration'] = acceleration
+                            stats['max_acceleration'] = max(stats['max_acceleration'], abs(acceleration))
 
                         stats['last_speed_for_accel'] = current_speed
                         stats['last_speed_frame'] = frame_num
@@ -150,10 +170,8 @@ class PlayerStatsTracker:
                     stamina_recovery = 0.05  # Recover stamina when resting
                     stats['stamina_score'] = min(100, stats['stamina_score'] + stamina_recovery)
                 
-                # Update frame count and average speed
+                # Update frame count
                 stats['frame_count'] += 1
-                if stats['speeds']:
-                    stats['avg_speed'] = sum(stats['speeds']) / len(stats['speeds'])
     
     def get_stamina_color(self, stamina):
         """Get color based on stamina level"""
@@ -251,15 +269,17 @@ class PlayerStatsTracker:
 
         stats_data = {}
         for player_id, stats in self.player_stats.items():
+            stamina_percentage = float(stats['stamina_score'])
             clean_stats = {
                 'player_id': int(player_id),
                 'total_distance_m': float(stats['total_distance']),
                 'max_speed_kmh': float(stats['max_speed']),
                 'avg_speed_kmh': float(stats['avg_speed']),
                 'sprint_speed_kmh': float(stats['sprint_speed']),
-                'max_acceleration': float(max(abs(a) for a in stats['accelerations']) if stats['accelerations'] else 0),
+                'max_acceleration': float(stats['max_acceleration']),
                 'jump_count': int(stats['jump_count']),
-                'stamina_percentage': float(stats['stamina_score']),
+                'stamina_percentage': stamina_percentage,
+                'stamina_diff': float(100.0 - stamina_percentage),
                 'sprint_time_seconds': float(stats['sprint_time']),
                 'total_sprint_distance_m': float(min(stats['total_distance'], stats['sprint_distance'])),
                 'total_frames_tracked': int(stats['frame_count'])
@@ -301,6 +321,7 @@ class PlayerStatsTracker:
         file_paths = []
 
         for player_id, stats in self.player_stats.items():
+            stamina_percentage = float(stats['stamina_score'])
             player_payload = {
                 'player_id': int(player_id),
                 'timestamp': timestamp,
@@ -308,9 +329,10 @@ class PlayerStatsTracker:
                 'max_speed_kmh': float(stats['max_speed']),
                 'avg_speed_kmh': float(stats['avg_speed']),
                 'sprint_speed_kmh': float(stats['sprint_speed']),
-                'max_acceleration': float(max(abs(a) for a in stats['accelerations']) if stats['accelerations'] else 0),
+                'max_acceleration': float(stats['max_acceleration']),
                 'jump_count': int(stats['jump_count']),
-                'stamina_percentage': float(stats['stamina_score']),
+                'stamina_percentage': stamina_percentage,
+                'stamina_diff': float(100.0 - stamina_percentage),
                 'sprint_time_seconds': float(stats['sprint_time']),
                 'total_sprint_distance_m': float(min(stats['total_distance'], stats['sprint_distance'])),
                 'total_frames_tracked': int(stats['frame_count'])

@@ -95,18 +95,4 @@ class CameraMovementEstimator():
         return camera_movement
     
     def draw_camera_movement(self,frames, camera_movement_per_frame):
-        output_frames=[]
-
-        for frame_num, frame in enumerate(frames):
-            try:
-                # Keep frame output unchanged; camera movement is still used internally for position adjustment.
-                frame = frame.copy()
-
-                output_frames.append(frame)
-                
-            except Exception as e:
-                print(f"Error processing frame {frame_num}: {e}")
-                # Add original frame if processing fails
-                output_frames.append(frame)
-
-        return output_frames
+        return frames

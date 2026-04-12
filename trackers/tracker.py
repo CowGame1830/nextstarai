@@ -630,6 +630,16 @@ class Tracker:
             detections += detections_batch
         return detections
 
+    def _iter_frame_detections(self, frames):
+        for frame_start in range(0, len(frames), self.batch_size):
+            detections_batch = self.model.predict(
+                frames[frame_start:frame_start + self.batch_size],
+                conf=self.detection_conf,
+                imgsz=self.imgsz,
+                verbose=False,
+            )
+            yield frame_start, detections_batch
+
     def _normalize_class_name(self, class_name):
         text = str(class_name or "").strip().lower().replace("-", "_").replace(" ", "_")
         if text in ("goal_keeper", "keeper"):
@@ -685,8 +695,6 @@ class Tracker:
                 tracks = pickle.load(f)
             return tracks
 
-        detections = self.detect_frames(frames)
-
         tracks={
             "players":[],
             "referees":[],
@@ -695,100 +703,104 @@ class Tracker:
 
         previous_ball_bbox = None
 
-        for frame_num in range(len(frames)):
-            detection = detections[frame_num]
-            cls_names = detection.names
-            class_ids = self._resolve_class_ids(cls_names)
-            player_class_id = class_ids["player"]
-            goalkeeper_class_id = class_ids["goalkeeper"]
-            referee_class_id = class_ids["referee"]
-            ball_class_id = class_ids["ball"]
+        for frame_start, detections_batch in self._iter_frame_detections(frames):
+            for batch_offset, detection in enumerate(detections_batch):
+                frame_num = frame_start + batch_offset
+                if frame_num >= len(frames):
+                    break
 
-            # Covert to supervision Detection format
-            detection_supervision = sv.Detections.from_ultralytics(detection)
+                cls_names = detection.names
+                class_ids = self._resolve_class_ids(cls_names)
+                player_class_id = class_ids["player"]
+                goalkeeper_class_id = class_ids["goalkeeper"]
+                referee_class_id = class_ids["referee"]
+                ball_class_id = class_ids["ball"]
 
-            # Apply NMS to remove duplicate bounding boxes
-            detection_supervision = self._apply_nms_to_detections(detection_supervision, self.nms_threshold)
+                # Covert to supervision Detection format
+                detection_supervision = sv.Detections.from_ultralytics(detection)
 
-            # Convert GoalKeeper to player object
-            if goalkeeper_class_id is not None and player_class_id is not None and detection_supervision.class_id is not None:
-                for object_ind, class_id in enumerate(detection_supervision.class_id):
-                    if int(class_id) == int(goalkeeper_class_id):
-                        detection_supervision.class_id[object_ind] = int(player_class_id)
+                # Apply NMS to remove duplicate bounding boxes
+                detection_supervision = self._apply_nms_to_detections(detection_supervision, self.nms_threshold)
 
-            # FILTER: Remove referees (no longer using them)
-            if referee_class_id is not None:
-                referee_mask = detection_supervision.class_id != referee_class_id
-                detection_supervision = detection_supervision[referee_mask]
+                # Convert GoalKeeper to player object
+                if goalkeeper_class_id is not None and player_class_id is not None and detection_supervision.class_id is not None:
+                    for object_ind, class_id in enumerate(detection_supervision.class_id):
+                        if int(class_id) == int(goalkeeper_class_id):
+                            detection_supervision.class_id[object_ind] = int(player_class_id)
 
-            # Track Objects
-            detection_with_tracks = self.tracker.update_with_detections(detection_supervision)
+                # FILTER: Remove referees (no longer using them)
+                if referee_class_id is not None and detection_supervision.class_id is not None:
+                    referee_mask = detection_supervision.class_id != referee_class_id
+                    detection_supervision = detection_supervision[referee_mask]
 
-            tracks["players"].append({})
-            tracks["referees"].append({})
-            tracks["ball"].append({})
+                # Track Objects
+                detection_with_tracks = self.tracker.update_with_detections(detection_supervision)
 
-            if hasattr(detection_with_tracks, "xyxy") and hasattr(detection_with_tracks, "tracker_id"):
-                tracked_boxes = detection_with_tracks.xyxy
-                tracked_class_ids = getattr(detection_with_tracks, "class_id", None)
-                tracked_ids = detection_with_tracks.tracker_id
+                tracks["players"].append({})
+                tracks["referees"].append({})
+                tracks["ball"].append({})
 
-                for det_idx, bbox_value in enumerate(tracked_boxes):
-                    bbox = self._bbox_to_list(bbox_value)
-                    cls_id = None if tracked_class_ids is None else self._scalar_to_int(tracked_class_ids[det_idx])
-                    track_id = self._scalar_to_int(tracked_ids[det_idx])
+                if hasattr(detection_with_tracks, "xyxy") and hasattr(detection_with_tracks, "tracker_id"):
+                    tracked_boxes = detection_with_tracks.xyxy
+                    tracked_class_ids = getattr(detection_with_tracks, "class_id", None)
+                    tracked_ids = detection_with_tracks.tracker_id
 
-                    if bbox is None or cls_id is None or track_id is None:
-                        continue
-
-                    if player_class_id is None:
-                        if ball_class_id is None or cls_id != ball_class_id:
-                            tracks["players"][frame_num][track_id] = {"bbox": bbox}
-                    elif cls_id == player_class_id:
-                        tracks["players"][frame_num][track_id] = {"bbox":bbox}
-            else:
-                for frame_detection in detection_with_tracks:
-                    if isinstance(frame_detection, dict):
-                        bbox_value = frame_detection.get("bbox")
-                        if bbox_value is None:
-                            bbox_value = frame_detection.get("xyxy")
+                    for det_idx, bbox_value in enumerate(tracked_boxes):
                         bbox = self._bbox_to_list(bbox_value)
-                        cls_id = self._scalar_to_int(frame_detection.get("class_id", frame_detection.get("cls_id")))
-                        track_id = self._scalar_to_int(frame_detection.get("track_id"))
-                    else:
-                        frame_values = frame_detection.tolist() if hasattr(frame_detection, "tolist") else list(frame_detection)
-                        bbox = self._bbox_to_list(frame_values[:4])
-                        cls_id = self._scalar_to_int(frame_values[4] if len(frame_values) > 4 else None)
-                        track_id = self._scalar_to_int(frame_values[5] if len(frame_values) > 5 else None)
+                        cls_id = None if tracked_class_ids is None else self._scalar_to_int(tracked_class_ids[det_idx])
+                        track_id = self._scalar_to_int(tracked_ids[det_idx])
 
-                    if bbox is None or cls_id is None or track_id is None:
-                        continue
+                        if bbox is None or cls_id is None or track_id is None:
+                            continue
 
-                    if player_class_id is None:
-                        if ball_class_id is None or cls_id != ball_class_id:
-                            tracks["players"][frame_num][track_id] = {"bbox": bbox}
-                    elif cls_id == player_class_id:
-                        tracks["players"][frame_num][track_id] = {"bbox":bbox}
+                        if player_class_id is None:
+                            if ball_class_id is None or cls_id != ball_class_id:
+                                tracks["players"][frame_num][track_id] = {"bbox": bbox}
+                        elif cls_id == player_class_id:
+                            tracks["players"][frame_num][track_id] = {"bbox":bbox}
+                else:
+                    for frame_detection in detection_with_tracks:
+                        if isinstance(frame_detection, dict):
+                            bbox_value = frame_detection.get("bbox")
+                            if bbox_value is None:
+                                bbox_value = frame_detection.get("xyxy")
+                            bbox = self._bbox_to_list(bbox_value)
+                            cls_id = self._scalar_to_int(frame_detection.get("class_id", frame_detection.get("cls_id")))
+                            track_id = self._scalar_to_int(frame_detection.get("track_id"))
+                        else:
+                            frame_values = frame_detection.tolist() if hasattr(frame_detection, "tolist") else list(frame_detection)
+                            bbox = self._bbox_to_list(frame_values[:4])
+                            cls_id = self._scalar_to_int(frame_values[4] if len(frame_values) > 4 else None)
+                            track_id = self._scalar_to_int(frame_values[5] if len(frame_values) > 5 else None)
+
+                        if bbox is None or cls_id is None or track_id is None:
+                            continue
+
+                        if player_class_id is None:
+                            if ball_class_id is None or cls_id != ball_class_id:
+                                tracks["players"][frame_num][track_id] = {"bbox": bbox}
+                        elif cls_id == player_class_id:
+                            tracks["players"][frame_num][track_id] = {"bbox":bbox}
+                    
+                    # Skip referees - removed from tracking
+                    # if cls_id == cls_names_inv['referee']:
+                    #     tracks["referees"][frame_num][track_id] = {"bbox":bbox}
                 
-                # Skip referees - removed from tracking
-                # if cls_id == cls_names_inv['referee']:
-                #     tracks["referees"][frame_num][track_id] = {"bbox":bbox}
-            
-            if ball_class_id is not None and detection_supervision.class_id is not None:
-                class_ids = detection_supervision.class_id
-                confidence = detection_supervision.confidence
-                boxes = detection_supervision.xyxy
+                if ball_class_id is not None and detection_supervision.class_id is not None:
+                    class_ids = detection_supervision.class_id
+                    confidence = detection_supervision.confidence
+                    boxes = detection_supervision.xyxy
 
-                ball_mask = class_ids == ball_class_id
-                if np.any(ball_mask):
-                    ball_boxes = boxes[ball_mask]
-                    ball_scores = confidence[ball_mask]
-                    selected_ball = self._pick_ball_candidate(ball_boxes, ball_scores, previous_ball_bbox)
+                    ball_mask = class_ids == ball_class_id
+                    if np.any(ball_mask):
+                        ball_boxes = boxes[ball_mask]
+                        ball_scores = confidence[ball_mask]
+                        selected_ball = self._pick_ball_candidate(ball_boxes, ball_scores, previous_ball_bbox)
 
-                    if selected_ball is not None:
-                        selected_ball = self._bbox_to_list(selected_ball)
-                        tracks["ball"][frame_num][1] = {"bbox": selected_ball}
-                        previous_ball_bbox = selected_ball
+                        if selected_ball is not None:
+                            selected_ball = self._bbox_to_list(selected_ball)
+                            tracks["ball"][frame_num][1] = {"bbox": selected_ball}
+                            previous_ball_bbox = selected_ball
 
         if stub_path is not None:
             with open(stub_path,'wb') as f:

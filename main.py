@@ -148,11 +148,10 @@ def main(
     # Initialize Player Statistics Tracker
     player_stats_tracker = PlayerStatsTracker(frame_rate=24)
     player_stats_tracker.update_player_stats(tracks)
-    for frame_players in tracks['players']:
-        for player_id, track_info in frame_players.items():
-            player_stats = player_stats_tracker.player_stats.get(player_id)
-            if player_stats is not None:
-                track_info['jump_count'] = int(player_stats.get('jump_count', 0))
+    speed_and_distance_estimator.player_jump_counts = {
+        player_id: int(stats.get('jump_count', 0))
+        for player_id, stats in player_stats_tracker.player_stats.items()
+    }
     
     # Assign Player Teams
     team_assigner = TeamAssigner()
@@ -214,15 +213,7 @@ def main(
     
     # Save one combined JSON file for all analysis outputs
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    all_player_ids = sorted(
-        set(speed_and_distance_estimator.all_detected_player_ids)
-        | {pid for frame_players in tracks['players'] for pid in frame_players.keys()}
-    )
-
-    speed_and_distance_estimator.player_jump_counts = {
-        player_id: int(stats.get('jump_count', 0))
-        for player_id, stats in player_stats_tracker.player_stats.items()
-    }
+    all_player_ids = sorted(set(speed_and_distance_estimator.all_detected_player_ids))
 
     def build_combined_stats_payload():
         return {

@@ -14,6 +14,9 @@ class SpeedAndDistance_Estimator():
         self.frame_window=5
         self.frame_rate=24
         self.speed_smoothing_alpha = 0.35
+        self.accel_smoothing_alpha = 0.45
+        self.accel_deadband_ms2 = 0.25
+        self.max_plausible_acceleration_ms2 = 6.5
         self.max_plausible_speed_kmh = 42.0
         self.min_movement_noise_m = 0.05
         self.max_step_distance_m = (self.max_plausible_speed_kmh / 3.6) / self.frame_rate * 1.35
@@ -28,6 +31,7 @@ class SpeedAndDistance_Estimator():
         self.player_sprint_speeds = {}
         self.player_total_distances = {}
         self.player_status = {}  # Current player status (waiting/jogging/running/sprinting)
+        self.player_last_speed_sample = {}
         self.all_detected_player_ids = set()
         
         # Speed thresholds for status determination (km/h)
@@ -58,6 +62,7 @@ class SpeedAndDistance_Estimator():
             self.player_total_distances[track_id] = 0
             self.player_positions_history[track_id] = deque(maxlen=5)
             self.player_status[track_id] = 'waiting'
+            self.player_last_speed_sample[track_id] = None
 
     def _compute_window_speed(self, object_tracks, track_id, frame_num, last_frame):
         """Compute speed from step-by-step path distance inside the window."""
@@ -141,7 +146,7 @@ class SpeedAndDistance_Estimator():
 
                     # Enhanced tracking for real-time stats
                     self._update_player_stats(track_id, speed_km_per_hour, distance_covered, 
-                                            start_position, end_position, frame_num)
+                                            start_position, end_position, end_idx)
 
                     for frame_num_batch in range(start_idx, end_idx + 1):
                         if track_id not in tracks[object][frame_num_batch]:
@@ -192,23 +197,39 @@ class SpeedAndDistance_Estimator():
         if len(self.player_positions_history[track_id]) > 5:
             self.player_positions_history[track_id].pop(0)
         
-        # Calculate current acceleration (change in speed over time)
-        if len(self.player_speeds_history[track_id]) >= 2:
-            # Get the last two speeds for current acceleration
-            current_speed_ms = current_speed / 3.6  # Convert km/h to m/s
-            prev_speed_ms = self.player_speeds_history[track_id][-2] / 3.6  # Convert km/h to m/s
-            
-            # Time difference between measurements
-            time_diff = self.frame_window / self.frame_rate
-            
-            # Calculate current acceleration (m/s²)
-            current_acceleration = (current_speed_ms - prev_speed_ms) / time_diff if time_diff > 0 else 0
-            
-            # Store current acceleration (can be positive or negative)
-            self.player_current_accelerations[track_id] = current_acceleration
-            
-            # Update maximum absolute acceleration for reference
-            self.player_accelerations[track_id] = max(self.player_accelerations[track_id], abs(current_acceleration))
+        # Calculate acceleration from actual time delta between speed samples.
+        last_sample = self.player_last_speed_sample.get(track_id)
+        if last_sample is not None:
+            prev_speed_kmh, prev_frame_num = last_sample
+            frame_delta = max(1, int(frame_num - prev_frame_num))
+            time_diff = frame_delta / self.frame_rate
+
+            current_speed_ms = current_speed / 3.6
+            prev_speed_ms = prev_speed_kmh / 3.6
+            raw_acceleration = (current_speed_ms - prev_speed_ms) / time_diff if time_diff > 0 else 0.0
+
+            # Remove micro-jitter and clamp to plausible football acceleration ranges.
+            if abs(raw_acceleration) < self.accel_deadband_ms2:
+                raw_acceleration = 0.0
+            raw_acceleration = float(np.clip(
+                raw_acceleration,
+                -self.max_plausible_acceleration_ms2,
+                self.max_plausible_acceleration_ms2,
+            ))
+
+            prev_acc = float(self.player_current_accelerations.get(track_id, 0.0))
+            smoothed_acceleration = (
+                self.accel_smoothing_alpha * raw_acceleration
+                + (1.0 - self.accel_smoothing_alpha) * prev_acc
+            )
+
+            self.player_current_accelerations[track_id] = smoothed_acceleration
+            self.player_accelerations[track_id] = max(
+                self.player_accelerations[track_id],
+                abs(smoothed_acceleration),
+            )
+
+        self.player_last_speed_sample[track_id] = (float(current_speed), int(frame_num))
         
         # Update sprint speed (maximum speed)
         self.player_sprint_speeds[track_id] = max(self.player_sprint_speeds[track_id], current_speed)
@@ -411,6 +432,7 @@ class SpeedAndDistance_Estimator():
         stats_data = {}
         for player_id in sorted(all_player_ids):
             speed_history = self.player_speeds_history.get(player_id, [])
+            final_stamina_percentage = float(self.player_stamina.get(player_id, 100))
             stats_data[f"player_{int(player_id)}"] = {
                 "player_id": int(player_id),
                 "max_speed_kmh": float(self.player_sprint_speeds.get(player_id, 0)),
@@ -419,7 +441,8 @@ class SpeedAndDistance_Estimator():
                 "current_acceleration": float(self.player_current_accelerations.get(player_id, 0)),
                 "total_distance_m": float(self.player_total_distances.get(player_id, 0)),
                 "jump_count": int(self.player_jump_counts.get(player_id, 0)),
-                "final_stamina_percentage": float(self.player_stamina.get(player_id, 100)),
+                "final_stamina_percentage": final_stamina_percentage,
+                "stamina_diff": float(100.0 - final_stamina_percentage),
                 "speed_history": [float(s) for s in speed_history],
                 "jumps_detected": []
             }

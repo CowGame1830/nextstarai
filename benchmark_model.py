@@ -151,6 +151,15 @@ def summarize_validation(model, data_yaml, imgsz=1280, conf=0.1):
 
     if hasattr(metrics, "box"):
         box_metrics = metrics.box
+        precision = float(getattr(box_metrics, "mp", 0.0))
+        recall = float(getattr(box_metrics, "mr", 0.0))
+        f1 = (2.0 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+
+        summary["precision"] = round(precision, 4)
+        summary["precision_percent"] = round(precision * 100.0, 2)
+        summary["recall"] = round(recall, 4)
+        summary["recall_percent"] = round(recall * 100.0, 2)
+        summary["f1_score"] = round(f1, 4)
         summary["mAP50_95"] = round(float(getattr(box_metrics, "map", 0.0)), 4)
         summary["mAP50"] = round(float(getattr(box_metrics, "map50", 0.0)), 4)
         summary["mAP75"] = round(float(getattr(box_metrics, "map75", 0.0)), 4)
@@ -165,8 +174,8 @@ def summarize_validation(model, data_yaml, imgsz=1280, conf=0.1):
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark YOLO model on football video and optional validation set")
-    parser.add_argument("--model", default="models/clean_label.pt", help="Path to model weights")
-    parser.add_argument("--video", default="input_videos/10secVideo.mp4", help="Path to test video")
+    parser.add_argument("--model", default="yolo11n.pt", help="Path to model weights")
+    parser.add_argument("--video", default="input_videos/9.mp4", help="Path to test video")
     parser.add_argument("--data", default=None, help="Optional data.yaml for labeled validation")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     parser.add_argument("--imgsz", type=int, default=1280, help="Inference image size")
