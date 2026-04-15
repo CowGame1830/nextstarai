@@ -1,4 +1,4 @@
-from utils import read_video, save_video
+from utils import read_video, save_video, get_video_fps
 from trackers import Tracker
 import cv2
 import numpy as np
@@ -175,6 +175,7 @@ def main(
 ):
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_paths = build_run_paths(input_video_path, run_timestamp)
+    source_video_fps = get_video_fps(input_video_path)
 
     # Read Video
     video_frames = run_with_loader("Reading video", read_video, input_video_path)
@@ -374,7 +375,13 @@ def main(
         print("Selected-player export saved as a single merged JSON file.")
 
     # Save final video output
-    run_with_loader("Saving output video", save_video, output_video_frames, run_paths["output_video_path"])
+    run_with_loader(
+        "Saving output video",
+        save_video,
+        output_video_frames,
+        run_paths["output_video_path"],
+        source_video_fps,
+    )
     print(f"Output video saved to: {run_paths['output_video_path']}")
 
 
