@@ -24,29 +24,50 @@ def dump_json_file(path, data):
 def filter_combined_stats_by_players(combined_stats, selected_player_ids=None):
     """Filter combined stats payload to selected players only."""
     if not selected_player_ids:
-        return combined_stats
+        selected_player_ids = combined_stats.get('detected_player_ids', [])
 
     selected_set = set(int(pid) for pid in selected_player_ids)
     filtered_ids = sorted([pid for pid in combined_stats.get('detected_player_ids', []) if int(pid) in selected_set])
 
-    filtered_player_stats = {}
+    merged_player_stats = {}
     original_player_stats = combined_stats.get('player_stats', {})
+    original_enhanced_stats = combined_stats.get('enhanced_stats', {})
+
+    duplicate_enhanced_keys = {
+        'player_id',
+        'max_speed_kmh',
+        'avg_speed_kmh',
+        'max_acceleration',
+        'total_distance_m',
+        'jump_count',
+        'stamina_diff',
+        'final_stamina_percentage',
+        'jumps_detected',
+    }
+
     for pid in filtered_ids:
         key = f"player_{int(pid)}"
-        if key in original_player_stats:
-            filtered_player_stats[key] = original_player_stats[key]
+        merged_stats = dict(original_player_stats.get(key, {}))
+        enhanced_stats = dict(original_enhanced_stats.get(key, {}))
+
+        # The player key already identifies the player, so keep the payload lean.
+        merged_stats.pop('player_id', None)
+        merged_stats.pop('stamina_diff', None)
+
+        # Keep the richer time-series fields, but avoid repeating the same
+        # metrics in both sections of the export.
+        for duplicate_key in duplicate_enhanced_keys:
+            enhanced_stats.pop(duplicate_key, None)
+
+        merged_stats.update(enhanced_stats)
+        if merged_stats:
+            merged_player_stats[key] = merged_stats
 
     if 'match_summary' in original_player_stats:
         summary = dict(original_player_stats['match_summary'])
+        summary.pop('timestamp', None)
         summary['total_players'] = len(filtered_ids)
-        filtered_player_stats['match_summary'] = summary
-
-    filtered_enhanced_stats = {}
-    original_enhanced_stats = combined_stats.get('enhanced_stats', {})
-    for pid in filtered_ids:
-        key = f"player_{int(pid)}"
-        if key in original_enhanced_stats:
-            filtered_enhanced_stats[key] = original_enhanced_stats[key]
+        merged_player_stats['match_summary'] = summary
 
     filtered_advanced_jump_stats = {}
     original_advanced_jump_stats = combined_stats.get('advanced_jump_stats', {})
@@ -60,8 +81,7 @@ def filter_combined_stats_by_players(combined_stats, selected_player_ids=None):
         "input_video": combined_stats.get("input_video"),
         "total_detected_players": len(filtered_ids),
         "detected_player_ids": filtered_ids,
-        "player_stats": filtered_player_stats,
-        "enhanced_stats": filtered_enhanced_stats,
+        "player_stats": merged_player_stats,
         "advanced_jump_stats": filtered_advanced_jump_stats,
     }
 

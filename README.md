@@ -97,3 +97,26 @@ python main.py --video input_videos/5.mp4 --model models/clean_label.pt --select
 Performance notes:
 - Tracker now uses stronger matching settings to reduce ID switches during occlusion/crossing.
 - Output JSON writing will automatically use `orjson` (if installed) for faster export.
+
+## Batch Processing Multiple Videos
+You can process many videos in one run with `--videos`.
+
+Example:
+
+```bash
+python main.py --videos input_videos/1.mp4 input_videos/2.mp4 input_videos/3.mp4
+```
+
+If you have a long list, you can pass 30 paths the same way. Each video is processed independently and writes its own outputs under:
+
+- `output_videos/<video_name>/`
+- `output_data/<video_name>/`
+
+Output files are named with the input video name and timestamp, for example:
+
+- `<video_name>_<timestamp>_output.avi`
+- `<video_name>_<timestamp>_analysis.json`
+- `<video_name>_player_stats_<timestamp>.json`
+- `<video_name>_enhanced_player_stats_<timestamp>.json`
+
+This removes the old checkpoint video naming and makes it easier to match every output back to its source video.

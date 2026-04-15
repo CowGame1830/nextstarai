@@ -14,6 +14,7 @@ from datetime import datetime
 import argparse
 import threading
 import time
+import re
 
 # Import components
 from components import (
@@ -29,8 +30,6 @@ from components import (
     dump_json_file,
     filter_combined_stats_by_players,
     filter_tracks_for_selected_players,
-    save_checkpoint_data,
-    merge_checkpoint_stats,
     _first_frame_with_players,
 )
 # Utility functions are now in the components package
@@ -77,6 +76,93 @@ def run_with_loader(message, func, *args, **kwargs):
         return func(*args, **kwargs)
 
 
+def sanitize_video_stem(video_path):
+    """Create a filesystem-safe name for a video run."""
+    video_stem = os.path.splitext(os.path.basename(video_path))[0]
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", video_stem).strip("._-")
+    return safe_stem or "video"
+
+
+def build_run_paths(input_video_path, timestamp):
+    """Create per-video output folders and filenames."""
+    video_stem = sanitize_video_stem(input_video_path)
+    video_output_dir = os.path.join("output_videos", video_stem)
+    data_output_dir = os.path.join("output_data", video_stem)
+    os.makedirs(video_output_dir, exist_ok=True)
+    os.makedirs(data_output_dir, exist_ok=True)
+
+    run_label = f"{video_stem}_{timestamp}"
+    return {
+        "video_stem": video_stem,
+        "run_label": run_label,
+        "video_output_dir": video_output_dir,
+        "data_output_dir": data_output_dir,
+        "output_video_path": os.path.join(video_output_dir, f"{run_label}_output.avi"),
+        "combined_stats_path": os.path.join(data_output_dir, f"{run_label}_analysis.json"),
+    }
+
+
+def resolve_selected_players(video_frames, tracks, initial_selected_player_ids, initial_selected_frame=0, allow_id_switch_reselect=True):
+    """Resolve a stable player selection without creating checkpoint videos."""
+    if not initial_selected_player_ids:
+        return None, []
+
+    resolved_player_ids = [int(pid) for pid in initial_selected_player_ids]
+    resolved_selected_frame = int(initial_selected_frame or 0)
+    selection_history = [
+        {
+            "stage": "initial",
+            "selected_player_ids": [int(pid) for pid in resolved_player_ids],
+            "selected_frame_index": resolved_selected_frame,
+        }
+    ]
+
+    if not allow_id_switch_reselect:
+        return resolved_player_ids, selection_history
+
+    while True:
+        selected_disappeared, disappeared_frame = detect_selected_players_disappeared(
+            tracks,
+            resolved_player_ids,
+            start_frame=resolved_selected_frame,
+        )
+
+        if not selected_disappeared:
+            return resolved_player_ids, selection_history
+
+        print("\n" + "=" * 70)
+        print(f"AUTO RE-SELECTION: Selected players disappeared at frame {disappeared_frame}")
+        print(f"Selected players: {resolved_player_ids}")
+        print("=" * 70)
+        print("Opening player selection UI again to pick a stable set...\n")
+
+        reselected_result = select_target_player_ids(
+            video_frames=video_frames,
+            tracks=tracks,
+            preferred_frame_index=disappeared_frame,
+            return_selected_frame=True,
+        )
+        if reselected_result is None:
+            print("No new selection was made; continuing with the last stable players.")
+            return resolved_player_ids, selection_history
+
+        reselected_player_ids, reselected_selected_frame = reselected_result
+        if not reselected_player_ids:
+            print("Empty selection returned; continuing with the last stable players.")
+            return resolved_player_ids, selection_history
+
+        resolved_player_ids = [int(pid) for pid in reselected_player_ids]
+        resolved_selected_frame = int(reselected_selected_frame or disappeared_frame)
+        selection_history.append(
+            {
+                "stage": "reselect",
+                "selected_player_ids": [int(pid) for pid in resolved_player_ids],
+                "selected_frame_index": resolved_selected_frame,
+                "disappeared_frame_index": int(disappeared_frame),
+            }
+        )
+
+
 def main(
     verbose_debug=False,
     export_player_ids=None,
@@ -87,8 +173,13 @@ def main(
     detection_conf=0.35,
     allow_id_switch_reselect=True,
 ):
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_paths = build_run_paths(input_video_path, run_timestamp)
+
     # Read Video
     video_frames = run_with_loader("Reading video", read_video, input_video_path)
+    if not video_frames:
+        raise ValueError(f"No frames could be read from {input_video_path}")
     print(f"จำนวนเฟรมใน video_frames = {len(video_frames)}")
 
     # Initialize Tracker
@@ -103,16 +194,29 @@ def main(
     )
     tracks = run_with_loader("Stabilizing player IDs", tracker.stabilize_player_ids, tracks)
 
-
+    selected_player_ids = export_player_ids
+    selected_frame_index = 0
     if select_target:
-        selected_player_ids = select_target_player_ids(
+        selected_result = select_target_player_ids(
             video_frames=video_frames,
             tracks=tracks,
             preferred_frame_index=target_frame_index,
+            return_selected_frame=True,
         )
-        if selected_player_ids is None or len(selected_player_ids) == 0:
+        if selected_result is None or len(selected_result[0]) == 0:
             raise RuntimeError("select-target mode requires selecting at least one player. Use --players to skip manual selection.")
-        export_player_ids = selected_player_ids
+        selected_player_ids, selected_frame_index = selected_result
+
+    if selected_player_ids:
+        selected_player_ids, selection_history = resolve_selected_players(
+            video_frames=video_frames,
+            tracks=tracks,
+            initial_selected_player_ids=selected_player_ids,
+            initial_selected_frame=selected_frame_index,
+            allow_id_switch_reselect=allow_id_switch_reselect,
+        )
+    else:
+        selection_history = []
 
     print("Player ID stabilization completed")
     print(f"[DEBUG] จำนวนเฟรมใน tracks['players'] = {len(tracks['players'])}")
@@ -184,10 +288,10 @@ def main(
         print(f"จำนวน Player IDs ทั้งหมด = {len(all_player_ids)}")
 
     # Draw output 
-    visual_tracks = filter_tracks_for_selected_players(tracks, export_player_ids)
+    visual_tracks = filter_tracks_for_selected_players(tracks, selected_player_ids)
 
-    if export_player_ids:
-        print(f"Visualizing selected players only: {sorted([int(pid) for pid in export_player_ids])}")
+    if selected_player_ids:
+        print(f"Visualizing selected players only: {sorted([int(pid) for pid in selected_player_ids])}")
     else:
         print("Visualizing all detected players")
 
@@ -212,129 +316,66 @@ def main(
     )
     
     # Save one combined JSON file for all analysis outputs
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     all_player_ids = sorted(set(speed_and_distance_estimator.all_detected_player_ids))
 
     def build_combined_stats_payload():
         return {
-            "timestamp": timestamp,
+            "timestamp": run_timestamp,
+            "video_stem": run_paths["video_stem"],
             "input_video": input_video_path,
+            "output_video": run_paths["output_video_path"],
+            "analysis_file": run_paths["combined_stats_path"],
+            "selected_player_ids": [int(pid) for pid in selected_player_ids] if selected_player_ids else [],
+            "selection_history": selection_history,
             "total_detected_players": len(all_player_ids),
             "detected_player_ids": [int(pid) for pid in all_player_ids],
-            "player_stats": player_stats_tracker.build_stats_payload(timestamp=timestamp),
+            "player_stats": player_stats_tracker.build_stats_payload(timestamp=run_timestamp),
             "enhanced_stats": speed_and_distance_estimator.build_enhanced_stats_data(all_player_ids=all_player_ids),
             "advanced_jump_stats": {},
         }
 
-    combined_stats = filter_combined_stats_by_players(build_combined_stats_payload(), export_player_ids)
+    combined_stats = filter_combined_stats_by_players(build_combined_stats_payload(), selected_player_ids)
+    combined_stats["video_stem"] = run_paths["video_stem"]
+    combined_stats["input_video_name"] = os.path.basename(input_video_path)
+    combined_stats["output_video"] = run_paths["output_video_path"]
+    combined_stats["analysis_file"] = run_paths["combined_stats_path"]
+    combined_stats["selection_history"] = selection_history
 
-    if export_player_ids:
+    if selected_player_ids:
         print(f"Exporting selected players only: {combined_stats['detected_player_ids']}")
     else:
         print("Exporting stats for all detected players")
 
-    # CHECKPOINT 1: Save first analysis results
-    checkpoint_1_data = save_checkpoint_data(combined_stats, export_player_ids, "checkpoint_1")
-    checkpoint_list = [checkpoint_1_data]
-    checkpoint_count = 1
-    
-    # Check if selected players disappeared - auto trigger re-selection (no asking)
-    if export_player_ids and allow_id_switch_reselect:
-        selected_disappeared, disappeared_frame = detect_selected_players_disappeared(tracks, export_player_ids)
-        
-        if selected_disappeared:
-            print("\n" + "="*70)
-            print(f"AUTO RE-SELECTION: Selected players disappeared at frame {disappeared_frame}")
-            print(f"Selected players: {export_player_ids}")
-            print("="*70)
-            print(f"First checkpoint saved with players: {combined_stats['detected_player_ids']}")
-            print("Automatically popping up player selection UI...\n")
-            
-            # Auto-trigger re-selection loop - keep asking until player confirms or no disappearance
-            reselected_result = select_target_player_ids(
-                video_frames=video_frames,
-                tracks=tracks,
-                preferred_frame_index=disappeared_frame,
-                return_selected_frame=True,
-            )
-            if reselected_result is None:
-                reselected_ids = None
-                reselected_from_frame = None
-            else:
-                reselected_ids, reselected_from_frame = reselected_result
-            
-            # Keep looping through re-selections if players keep disappearing
-            while reselected_ids is not None and len(reselected_ids) > 0:
-                checkpoint_count += 1
-                print(f"\nRe-selected new players (Checkpoint {checkpoint_count}): {reselected_ids} (from frame {reselected_from_frame})")
-                
-                # Filter tracks and regenerate stats for new selection
-                visual_tracks_cp = filter_tracks_for_selected_players(tracks, reselected_ids)
-                
-                # Regenerate output frames for this checkpoint
-                output_video_frames_cp = run_with_loader(
-                    f"Checkpoint {checkpoint_count}: drawing annotations",
-                    tracker.draw_annotations,
-                    video_frames,
-                    visual_tracks_cp,
-                    team_ball_control
-                )
-                output_video_frames_cp = camera_movement_estimator.draw_camera_movement(output_video_frames_cp, camera_movement_per_frame)
-                output_video_frames_cp = run_with_loader(
-                    f"Checkpoint {checkpoint_count}: rendering overlays",
-                    speed_and_distance_estimator.draw_speed_and_distance,
-                    output_video_frames_cp,
-                    visual_tracks_cp
-                )
-                
-                # Generate checkpoint stats
-                combined_stats_cp = filter_combined_stats_by_players(build_combined_stats_payload(), reselected_ids)
-                checkpoint_cp_data = save_checkpoint_data(combined_stats_cp, reselected_ids, f"checkpoint_{checkpoint_count}")
-                checkpoint_list.append(checkpoint_cp_data)
-                
-                print(f"Checkpoint {checkpoint_count} saved with players: {combined_stats_cp['detected_player_ids']}")
-                
-                # Save video for this checkpoint
-                output_video_path = f'output_videos/output_video_checkpoint{checkpoint_count}.avi'
-                run_with_loader(f"Checkpoint {checkpoint_count}: saving video", save_video, output_video_frames_cp, output_video_path)
-                print(f"Video saved to {output_video_path}")
-                
-                # Check if these new selected players also disappeared - if yes, auto trigger again
-                selected_disappeared_again, disappeared_frame_again = detect_selected_players_disappeared(
-                    tracks, reselected_ids, reselected_from_frame
-                )
-                
-                if selected_disappeared_again:
-                    print(f"\n  New selected players disappeared at frame {disappeared_frame_again}")
-                    print(" AUTO RE-SELECTION: Popping up player selection UI again...\n")
-                    
-                    # Auto-trigger next re-selection
-                    reselected_result = select_target_player_ids(
-                        video_frames=video_frames,
-                        tracks=tracks,
-                        preferred_frame_index=disappeared_frame_again,
-                        return_selected_frame=True,
-                    )
-                    if reselected_result is None:
-                        reselected_ids = None
-                        reselected_from_frame = None
-                    else:
-                        reselected_ids, reselected_from_frame = reselected_result
-                else:
-                    # New selection is stable - break loop
-                    print("\nCurrent selection is stable - no further disappearances detected")
-                    reselected_ids = None
+    dump_json_file(run_paths["combined_stats_path"], combined_stats)
+    print(f"\nCombined analysis saved to: {run_paths['combined_stats_path']}")
 
-    os.makedirs("output_data", exist_ok=True)
-    
-    # Save merged checkpoint data only
-    merged_data = merge_checkpoint_stats(checkpoint_list, timestamp)
-    merged_file = os.path.join("output_data", f"merged_checkpoints_{timestamp}.json")
-    dump_json_file(merged_file, merged_data)
-    print(f"\nMerged checkpoint data saved to: {merged_file}")
+    if not selected_player_ids:
+        os.makedirs(run_paths["data_output_dir"], exist_ok=True)
+
+        player_stats_file = player_stats_tracker.save_stats_to_file(
+            output_dir=run_paths["data_output_dir"],
+            filename_prefix=f"{run_paths['video_stem']}_player_stats",
+            timestamp=run_timestamp,
+        )
+        player_stats_tracker.save_player_stats_per_file(
+            output_dir=run_paths["data_output_dir"],
+            filename_prefix=f"{run_paths['video_stem']}_player",
+            timestamp=run_timestamp,
+        )
+        enhanced_stats_file = speed_and_distance_estimator.save_enhanced_stats_to_json(
+            output_dir=run_paths["data_output_dir"],
+            filename_prefix=f"{run_paths['video_stem']}_enhanced_player_stats",
+            timestamp=run_timestamp,
+        )
+
+        print(f"Player stats saved to: {player_stats_file}")
+        print(f"Enhanced stats saved to: {enhanced_stats_file}")
+    else:
+        print("Selected-player export saved as a single merged JSON file.")
 
     # Save final video output
-    run_with_loader("Saving output video", save_video, output_video_frames, 'output_videos/output_video.avi')
+    run_with_loader("Saving output video", save_video, output_video_frames, run_paths["output_video_path"])
+    print(f"Output video saved to: {run_paths['output_video_path']}")
 
 
 ###############################################################################

@@ -403,17 +403,20 @@ class SpeedAndDistance_Estimator():
             import traceback
             traceback.print_exc()
 
-    def save_enhanced_stats_to_json(self, output_dir="output_data"):
+    def save_enhanced_stats_to_json(self, output_dir="output_data", filename_prefix="enhanced_player_stats", timestamp=None):
         """Save enhanced player statistics to JSON file"""
         import json
         import os
-        from datetime import datetime
         
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{output_dir}/enhanced_player_stats_{timestamp}.json"
+        if timestamp is None:
+            from datetime import datetime
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        filename = os.path.join(output_dir, f"{filename_prefix}_{timestamp}.json")
         
         stats_data = self.build_enhanced_stats_data()
         

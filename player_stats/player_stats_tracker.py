@@ -294,14 +294,16 @@ class PlayerStatsTracker:
 
         return stats_data
     
-    def save_stats_to_file(self, output_dir="output_data"):
+    def save_stats_to_file(self, output_dir="output_data", filename_prefix="player_stats", timestamp=None):
         """Save player statistics to JSON file"""
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
+        if timestamp is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
         # Create filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"player_stats_{timestamp}.json"
+        filename = f"{filename_prefix}_{timestamp}.json"
         filepath = os.path.join(output_dir, filename)
         
         stats_data = self.build_stats_payload(timestamp=timestamp)
@@ -311,13 +313,14 @@ class PlayerStatsTracker:
         
         return filepath
 
-    def save_player_stats_per_file(self, output_dir="output_data"):
+    def save_player_stats_per_file(self, output_dir="output_data", filename_prefix="player", timestamp=None):
         """Save one JSON file per player and return file paths."""
         player_dir = os.path.join(output_dir, "players")
         if not os.path.exists(player_dir):
             os.makedirs(player_dir)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if timestamp is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_paths = []
 
         for player_id, stats in self.player_stats.items():
@@ -338,7 +341,7 @@ class PlayerStatsTracker:
                 'total_frames_tracked': int(stats['frame_count'])
             }
 
-            filename = f"player_{int(player_id)}_{timestamp}.json"
+            filename = f"{filename_prefix}_{int(player_id)}_{timestamp}.json"
             filepath = os.path.join(player_dir, filename)
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(player_payload, f, indent=2)
