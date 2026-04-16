@@ -84,10 +84,10 @@ def sanitize_video_stem(video_path):
 
 
 def build_run_paths(input_video_path, timestamp):
-    """Create per-video output folders and filenames."""
+    """Create flat output folders and per-video filenames."""
     video_stem = sanitize_video_stem(input_video_path)
-    video_output_dir = os.path.join("output_videos", video_stem)
-    data_output_dir = os.path.join("output_data", video_stem)
+    video_output_dir = "output_videos"
+    data_output_dir = "output_data"
     os.makedirs(video_output_dir, exist_ok=True)
     os.makedirs(data_output_dir, exist_ok=True)
 
@@ -351,8 +351,6 @@ def main(
     print(f"\nCombined analysis saved to: {run_paths['combined_stats_path']}")
 
     if not selected_player_ids:
-        os.makedirs(run_paths["data_output_dir"], exist_ok=True)
-
         player_stats_file = player_stats_tracker.save_stats_to_file(
             output_dir=run_paths["data_output_dir"],
             filename_prefix=f"{run_paths['video_stem']}_player_stats",

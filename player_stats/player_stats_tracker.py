@@ -315,9 +315,8 @@ class PlayerStatsTracker:
 
     def save_player_stats_per_file(self, output_dir="output_data", filename_prefix="player", timestamp=None):
         """Save one JSON file per player and return file paths."""
-        player_dir = os.path.join(output_dir, "players")
-        if not os.path.exists(player_dir):
-            os.makedirs(player_dir)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
         if timestamp is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -342,7 +341,7 @@ class PlayerStatsTracker:
             }
 
             filename = f"{filename_prefix}_{int(player_id)}_{timestamp}.json"
-            filepath = os.path.join(player_dir, filename)
+            filepath = os.path.join(output_dir, filename)
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(player_payload, f, indent=2)
 

@@ -109,8 +109,8 @@ python main.py --videos input_videos/1.mp4 input_videos/2.mp4 input_videos/3.mp4
 
 If you have a long list, you can pass 30 paths the same way. Each video is processed independently and writes its own outputs under:
 
-- `output_videos/<video_name>/`
-- `output_data/<video_name>/`
+- `output_videos/`
+- `output_data/`
 
 Output files are named with the input video name and timestamp, for example:
 
