@@ -1,0 +1,80 @@
+{
+  "timestamp": "20260416_222556",
+  "input_video": "input_videos/37.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    9,
+    19
+  ],
+  "player_stats": {
+    "player_9": {
+      "total_distance_m": 47.83131631713803,
+      "max_speed_kmh": 15.974980292033159,
+      "avg_speed_kmh": 8.341869631549292,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.066454153009396,
+      "jump_count": 0,
+      "stamina_percentage": 97.50000000000014,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 480,
+      "current_acceleration": 0.23917946121041928,
+      "speed_history": [
+        11.190490276512554,
+        10.698004511049506,
+        14.372526018559132,
+        11.058708922865865,
+        15.974980292033159,
+        12.432447507500653,
+        15.780943616118934,
+        14.404993629616069,
+        15.726594335377065,
+        15.450053783102202
+      ]
+    },
+    "player_19": {
+      "total_distance_m": 7.4600347345302715,
+      "max_speed_kmh": 17.497103069935083,
+      "avg_speed_kmh": 4.655064153478974,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.0796195631794854,
+      "jump_count": 0,
+      "stamina_percentage": 99.70000000000002,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 112,
+      "current_acceleration": 2.7103063806188623,
+      "speed_history": [
+        7.969526926871309,
+        8.091388845038093,
+        8.230683569623903,
+        9.720486010255335,
+        8.818162885170988,
+        9.830476823413354,
+        8.32904150322657,
+        14.585923928849507,
+        11.517690277991882,
+        17.497103069935083
+      ]
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 480
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "37",
+  "input_video_name": "37.mp4",
+  "output_video": "output_videos\\37_20260416_222556_output.avi",
+  "analysis_file": "output_data\\37_20260416_222556_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        9,
+        19
+      ],
+      "selected_frame_index": 110
+    }
+  ]
+}

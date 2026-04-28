@@ -32,8 +32,12 @@ def calculate_attributes_from_file(json_path):
     # --- Calculate FM-scale Attributes ---
     pace  = calculate_pace(stats.get("max_speed_kmh", 0))
     acc   = calculate_acceleration(stats.get("max_acceleration_enhanced", 0))
-    wr    = calculate_work_rate(stats.get("avg_speed_kmh", 0), stats.get("sprint_percentage", 0))
-    stam  = calculate_stamina(stats.get("stamina_percentage", 0))
+    wr    = calculate_work_rate(
+        stats.get("avg_speed_kmh", 0), 
+        stats.get("jogging_percentage", 0.9), 
+        stats.get("burst_frequency", 15.0)
+    )
+    stam  = calculate_stamina(stats.get("avg_speed_kmh", 0), stats.get("sprint_percentage", 0), stats.get("decay_rate", 1.0))
 
     # --- Print Results ---
     print("\n" + "=" * 55)

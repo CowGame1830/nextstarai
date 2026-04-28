@@ -1,0 +1,80 @@
+{
+  "timestamp": "20260417_105459",
+  "input_video": "input_videos/59.mp4",
+  "total_detected_players": 3,
+  "detected_player_ids": [
+    20,
+    20,
+    14
+  ],
+  "player_stats": {
+    "player_20": {
+      "total_distance_m": 24.042518223119387,
+      "sprint_time_seconds": 0.125,
+      "total_sprint_distance_m": 0.7231390902790291,
+      "jump_count": 2,
+      "total_frames_tracked": 150,
+      "max_speed_kmh": 20.82640580003604,
+      "sprint_speed_kmh": 20.82640580003604,
+      "max_acceleration": 3.1488540046391553,
+      "avg_speed_kmh": 11.262091734623226,
+      "stamina_percentage": 97.50000000000014,
+      "current_acceleration": 0.928596009904282,
+      "speed_history": [
+        10.213453685420985,
+        12.396046655868474,
+        13.469057828296059,
+        16.893721290509124,
+        16.524723031961393,
+        17.92539572432962,
+        11.651507220814253,
+        17.495979693529264,
+        19.82831661544006,
+        20.82640580003604,
+        12.680621124796296,
+        18.06273916153566,
+        18.781237503540105,
+        18.074425840971543,
+        17.50746895728705,
+        16.077756884918088,
+        14.466485260898313,
+        14.19122886589273,
+        10.522878286809282
+      ]
+    },
+    "player_14": {
+      "total_distance_m": 0.0,
+      "max_speed_kmh": 0.0,
+      "avg_speed_kmh": 0.0,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 0.0,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 51,
+      "current_acceleration": 0.0,
+      "speed_history": []
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 390
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "59",
+  "input_video_name": "59.mp4",
+  "output_video": "output_videos\\59_20260417_105459_output.avi",
+  "analysis_file": "output_data\\59_20260417_105459_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        20,
+        20,
+        14
+      ],
+      "selected_frame_index": 435
+    }
+  ]
+}

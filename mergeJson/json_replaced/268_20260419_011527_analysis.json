@@ -1,0 +1,71 @@
+{
+  "timestamp": "20260419_011527",
+  "input_video": "input_videos/268.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    14,
+    20
+  ],
+  "player_stats": {
+    "player_14": {
+      "total_distance_m": 58.123873361022135,
+      "max_speed_kmh": 24.892339436934478,
+      "avg_speed_kmh": 10.171157810097245,
+      "sprint_speed_kmh": 24.892339436934478,
+      "max_acceleration": 3.0800121897221615,
+      "jump_count": 1,
+      "stamina_percentage": 88.75000000000064,
+      "sprint_time_seconds": 4.791666666666666,
+      "total_sprint_distance_m": 28.78785402910717,
+      "total_frames_tracked": 480,
+      "current_acceleration": -1.3520282692602692,
+      "speed_history": [
+        20.410835756485888,
+        19.52093862895753,
+        16.818882737256693,
+        15.934221690276175,
+        14.84586951644022,
+        16.038641067230802,
+        16.84658903262582,
+        20.790522100446957,
+        18.191086430652955,
+        16.483205404908755
+      ]
+    },
+    "player_20": {
+      "total_distance_m": 1.40445355581666,
+      "max_speed_kmh": 8.494135105579158,
+      "avg_speed_kmh": 0.5364716908786837,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 2.9250000000000003,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 95,
+      "current_acceleration": 0.0,
+      "speed_history": [
+        8.494135105579158
+      ]
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 480
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "268",
+  "input_video_name": "268.mp4",
+  "output_video": "output_videos\\268_20260419_011527_output.avi",
+  "analysis_file": "output_data\\268_20260419_011527_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        14,
+        20
+      ],
+      "selected_frame_index": 0
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "timestamp": "20260417_232832",
+  "input_video": "input_videos/344.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    33,
+    64
+  ],
+  "player_stats": {
+    "player_33": {
+      "total_distance_m": 54.350568468225795,
+      "max_speed_kmh": 23.30424292504795,
+      "avg_speed_kmh": 13.280460285394097,
+      "sprint_speed_kmh": 23.30424292504795,
+      "max_acceleration": 3.087320259686084,
+      "jump_count": 2,
+      "stamina_percentage": 82.70000000000098,
+      "sprint_time_seconds": 0.5416666666666666,
+      "total_sprint_distance_m": 3.1966855179776266,
+      "total_frames_tracked": 339,
+      "current_acceleration": -0.6852257160791309,
+      "speed_history": [
+        16.665548462083873,
+        15.93462068553241,
+        16.434596239728073,
+        13.938104197550604,
+        18.070843142017488,
+        16.498856996062322,
+        18.4444488075163,
+        16.40283501192348,
+        17.593034141208154,
+        16.398418954944166
+      ]
+    },
+    "player_64": {
+      "total_distance_m": 0.0,
+      "max_speed_kmh": 0.0,
+      "avg_speed_kmh": 0.0,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 0.0,
+      "jump_count": 1,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 96,
+      "current_acceleration": 0.0,
+      "speed_history": []
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 477
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "344",
+  "input_video_name": "344.mp4",
+  "output_video": "output_videos\\344_20260417_232832_output.avi",
+  "analysis_file": "output_data\\344_20260417_232832_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        4,
+        6
+      ],
+      "selected_frame_index": 0
+    },
+    {
+      "stage": "reselect",
+      "selected_player_ids": [
+        33,
+        64
+      ],
+      "selected_frame_index": 286,
+      "disappeared_frame_index": 141
+    }
+  ]
+}

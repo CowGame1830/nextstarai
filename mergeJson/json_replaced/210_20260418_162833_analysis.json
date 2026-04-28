@@ -1,0 +1,68 @@
+{
+  "timestamp": "20260418_162833",
+  "input_video": "input_videos/210.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    14,
+    14
+  ],
+  "player_stats": {
+    "player_14": {
+      "total_distance_m": 16.323305664024048,
+      "sprint_time_seconds": 1.083333333333333,
+      "total_sprint_distance_m": 8.242318614227335,
+      "jump_count": 1,
+      "total_frames_tracked": 188,
+      "max_speed_kmh": 30.816084887836006,
+      "sprint_speed_kmh": 30.816084887836006,
+      "max_acceleration": 3.0722106796875,
+      "avg_speed_kmh": 5.771926725907348,
+      "stamina_percentage": 97.90000000000012,
+      "current_acceleration": -0.26043929459791726,
+      "speed_history": [
+        10.892316588953943,
+        19.762029745453596,
+        21.688856674114,
+        22.78172200333036,
+        28.928304554797357,
+        28.788988222513833,
+        30.816084887836006,
+        29.855641114827293,
+        2.3613668164662984,
+        7.748938263480284,
+        8.223012732651597,
+        8.054885155901918,
+        10.108901410208883,
+        8.020159870785145
+      ]
+    },
+    "match_summary": {
+      "total_players": 1,
+      "analysis_duration_frames": 480
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "210",
+  "input_video_name": "210.mp4",
+  "output_video": "output_videos\\210_20260418_162833_output.avi",
+  "analysis_file": "output_data\\210_20260418_162833_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        14,
+        14
+      ],
+      "selected_frame_index": 0
+    },
+    {
+      "stage": "reselect",
+      "selected_player_ids": [
+        14,
+        14
+      ],
+      "selected_frame_index": 360,
+      "disappeared_frame_index": 85
+    }
+  ]
+}

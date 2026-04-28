@@ -1,0 +1,80 @@
+{
+  "timestamp": "20260416_220457",
+  "input_video": "input_videos/29.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    16,
+    40
+  ],
+  "player_stats": {
+    "player_16": {
+      "total_distance_m": 8.584399715761688,
+      "max_speed_kmh": 8.214841547209467,
+      "avg_speed_kmh": 3.528723799972466,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.072511657515284,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 191,
+      "current_acceleration": 0.8656541885124412,
+      "speed_history": [
+        2.509681682327447,
+        2.7349525803006496,
+        3.742724353712606,
+        3.020674168779423,
+        4.002021307389829,
+        4.741651134118589,
+        4.7165302830533085,
+        7.108872843750084,
+        8.214841547209467,
+        8.171400474646278
+      ]
+    },
+    "player_40": {
+      "total_distance_m": 13.653035709625609,
+      "max_speed_kmh": 15.336382227882659,
+      "avg_speed_kmh": 11.006254366948388,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.0722106796875,
+      "jump_count": 0,
+      "stamina_percentage": 99.00000000000006,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 96,
+      "current_acceleration": 0.06722613490164764,
+      "speed_history": [
+        10.18477541167631,
+        9.571861629857617,
+        12.833233334875946,
+        10.485287450603382,
+        14.779841038185634,
+        11.212073257420403,
+        15.238409764279384,
+        13.972174716510764,
+        15.336382227882659,
+        14.706224302883884
+      ]
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 478
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "29",
+  "input_video_name": "29.mp4",
+  "output_video": "output_videos\\29_20260416_220457_output.avi",
+  "analysis_file": "output_data\\29_20260416_220457_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        16,
+        40
+      ],
+      "selected_frame_index": 0
+    }
+  ]
+}

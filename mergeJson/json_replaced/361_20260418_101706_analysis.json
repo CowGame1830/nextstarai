@@ -1,0 +1,24 @@
+{
+  "timestamp": "20260418_101706",
+  "input_video": "input_videos/361.mp4",
+  "total_detected_players": 0,
+  "detected_player_ids": [],
+  "player_stats": {
+    "match_summary": {
+      "total_players": 0,
+      "analysis_duration_frames": 277
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "361",
+  "input_video_name": "361.mp4",
+  "output_video": "output_videos\\361_20260418_101706_output.avi",
+  "analysis_file": "output_data\\361_20260418_101706_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [],
+      "selected_frame_index": 281
+    }
+  ]
+}

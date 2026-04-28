@@ -1,0 +1,160 @@
+{
+  "timestamp": "20260419_002908",
+  "input_video": "input_videos/258.mp4",
+  "total_detected_players": 5,
+  "detected_player_ids": [
+    11,
+    18,
+    28,
+    38,
+    84
+  ],
+  "player_stats": {
+    "player_11": {
+      "total_distance_m": 36.47048772225623,
+      "max_speed_kmh": 37.45837611993461,
+      "avg_speed_kmh": 7.207691838768248,
+      "sprint_speed_kmh": 37.45837611993461,
+      "max_acceleration": 4.482202521790754,
+      "jump_count": 2,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 4.2916666666666625,
+      "total_sprint_distance_m": 32.21433084545681,
+      "total_frames_tracked": 394,
+      "current_acceleration": -2.093554488500565,
+      "speed_history": [
+        24.287026964830602,
+        24.369664277449566,
+        25.72390164940211,
+        28.10247081041519,
+        31.295777249851362,
+        32.5214241992674,
+        35.83892572952381,
+        37.4011786999192,
+        37.45837611993461,
+        34.37956625724056
+      ]
+    },
+    "player_18": {
+      "total_distance_m": 36.346434695813485,
+      "max_speed_kmh": 27.625809638931052,
+      "avg_speed_kmh": 13.926291595722791,
+      "sprint_speed_kmh": 27.625809638931052,
+      "max_acceleration": 3.1417966182653343,
+      "jump_count": 3,
+      "stamina_percentage": 91.90000000000046,
+      "sprint_time_seconds": 3.4583333333333295,
+      "total_sprint_distance_m": 23.228298698720312,
+      "total_frames_tracked": 207,
+      "current_acceleration": -1.084820417630331,
+      "speed_history": [
+        12.609792284740543,
+        18.501953816894215,
+        20.414256514707596,
+        25.171456716219197,
+        27.102858075916572,
+        27.094961199654975,
+        27.625809638931052,
+        26.403032907980496,
+        25.70006140123911,
+        24.540104965444932
+      ]
+    },
+    "player_28": {
+      "total_distance_m": 32.385899828569315,
+      "max_speed_kmh": 31.641112858259525,
+      "avg_speed_kmh": 9.892866352192135,
+      "sprint_speed_kmh": 31.641112858259525,
+      "max_acceleration": 3.1796329427042167,
+      "jump_count": 1,
+      "stamina_percentage": 94.55000000000031,
+      "sprint_time_seconds": 3.916666666666661,
+      "total_sprint_distance_m": 29.561732381689048,
+      "total_frames_tracked": 263,
+      "current_acceleration": -2.0113906439561315,
+      "speed_history": [
+        30.509192419169622,
+        30.16998180544395,
+        30.597901536321622,
+        30.900185570080463,
+        30.460286266748817,
+        25.769483256836843,
+        22.504768783751572,
+        21.91227922493048,
+        26.966765820065532,
+        21.034042206603225
+      ]
+    },
+    "player_38": {
+      "total_distance_m": 26.452111176838176,
+      "max_speed_kmh": 31.744820136199642,
+      "avg_speed_kmh": 5.357226505586079,
+      "sprint_speed_kmh": 31.744820136199642,
+      "max_acceleration": 3.4116468750000006,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 2.7499999999999987,
+      "total_sprint_distance_m": 21.353525956999256,
+      "total_frames_tracked": 365,
+      "current_acceleration": -2.506099171098504,
+      "speed_history": [
+        25.30809775982728,
+        26.192131922621968,
+        29.875169052966264,
+        29.809643260272644,
+        29.63104233585069,
+        28.025051618038262,
+        29.606298449835847,
+        31.744820136199642,
+        31.495824099465324,
+        27.598081533387194
+      ]
+    },
+    "player_84": {
+      "total_distance_m": 0.0,
+      "max_speed_kmh": 0.0,
+      "avg_speed_kmh": 0.0,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 0.0,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 76,
+      "current_acceleration": 0.0,
+      "speed_history": []
+    },
+    "match_summary": {
+      "total_players": 5,
+      "analysis_duration_frames": 479
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "258",
+  "input_video_name": "258.mp4",
+  "output_video": "output_videos\\258_20260419_002908_output.avi",
+  "analysis_file": "output_data\\258_20260419_002908_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        11,
+        18,
+        28
+      ],
+      "selected_frame_index": 28
+    },
+    {
+      "stage": "reselect",
+      "selected_player_ids": [
+        11,
+        18,
+        28,
+        38,
+        84
+      ],
+      "selected_frame_index": 412,
+      "disappeared_frame_index": 412
+    }
+  ]
+}

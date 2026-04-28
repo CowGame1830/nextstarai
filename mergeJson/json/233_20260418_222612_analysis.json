@@ -1,0 +1,79 @@
+{
+  "timestamp": "20260418_222612",
+  "input_video": "input_videos/233.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    2,
+    25
+  ],
+  "player_stats": {
+    "player_2": {
+      "total_distance_m": 23.845970446429853,
+      "max_speed_kmh": 19.44377920154004,
+      "avg_speed_kmh": 4.035521705246171,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.0800122006537705,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 480,
+      "current_acceleration": -0.5643391409905636,
+      "speed_history": [
+        11.359847843068296,
+        15.321901097994392,
+        16.70217452415615,
+        16.167580777696095,
+        17.490465383168445,
+        14.266618441478704,
+        13.5651213402822,
+        13.252308773390101,
+        18.098262172800986,
+        14.873965454718071
+      ]
+    },
+    "player_25": {
+      "total_distance_m": 7.753112958600479,
+      "max_speed_kmh": 17.81369436546533,
+      "avg_speed_kmh": 3.79612963041744,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.4116468750000006,
+      "jump_count": 1,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 150,
+      "current_acceleration": -1.2656507158707446,
+      "speed_history": [
+        6.615,
+        10.7147949894302,
+        14.452255199933186,
+        16.91396830882498,
+        17.81369436546533,
+        17.702953403796293,
+        16.33982105818789,
+        15.274099840097513,
+        9.928164896063384
+      ]
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 480
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "233",
+  "input_video_name": "233.mp4",
+  "output_video": "output_videos\\233_20260418_222612_output.avi",
+  "analysis_file": "output_data\\233_20260418_222612_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        2,
+        25
+      ],
+      "selected_frame_index": 0
+    }
+  ]
+}

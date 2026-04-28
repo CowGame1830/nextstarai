@@ -1,0 +1,106 @@
+{
+  "timestamp": "20260410_215349",
+  "input_video": "input_videos/13.mp4",
+  "total_checkpoints": 2,
+  "checkpoints": [
+    {
+      "checkpoint_name": "checkpoint_1",
+      "timestamp": "20260410_215349",
+      "selected_player_ids": [
+        6
+      ],
+      "player_stats": {
+        "player_6": {
+          "player_id": 6,
+          "total_distance_m": 88.86485473393857,
+          "max_speed_kmh": 28.798907054474853,
+          "avg_speed_kmh": 14.747819894580442,
+          "sprint_speed_kmh": 28.798907054474853,
+          "max_acceleration": 119.03812319260064,
+          "jump_count": 3,
+          "stamina_percentage": 72.85000000000154,
+          "sprint_time_seconds": 8.500000000000014,
+          "total_sprint_distance_m": 55.54598519123962,
+          "total_frames_tracked": 506
+        },
+        "match_summary": {
+          "total_players": 1,
+          "timestamp": "20260410_215349",
+          "analysis_duration_frames": 506
+        }
+      },
+      "enhanced_stats": {
+        "player_6": {
+          "player_id": 6,
+          "max_speed_kmh": 28.798907054474853,
+          "avg_speed_kmh": 19.06583830638973,
+          "max_acceleration": 12.819490189972369,
+          "current_acceleration": -10.207261286947336,
+          "total_distance_m": 88.86485473393857,
+          "jump_count": 3,
+          "final_stamina_percentage": 93.05962462625597,
+          "speed_history": [
+            19.185549587487778,
+            15.66820865338649,
+            19.023531852944757,
+            19.77890325515705,
+            22.91000833909256,
+            18.713995662081448,
+            20.11886672024944,
+            19.16935944321968,
+            21.872702757744293,
+            14.21725679253379
+          ],
+          "jumps_detected": []
+        }
+      },
+      "advanced_jump_stats": {}
+    },
+    {
+      "checkpoint_name": "checkpoint_2",
+      "timestamp": "20260410_215456",
+      "selected_player_ids": [
+        77
+      ],
+      "player_stats": {
+        "player_77": {
+          "player_id": 77,
+          "total_distance_m": 0.0,
+          "max_speed_kmh": 0.0,
+          "avg_speed_kmh": 0.0,
+          "sprint_speed_kmh": 0.0,
+          "max_acceleration": 0.0,
+          "jump_count": 0,
+          "stamina_percentage": 100.0,
+          "sprint_time_seconds": 0.0,
+          "total_sprint_distance_m": 0.0,
+          "total_frames_tracked": 217
+        },
+        "match_summary": {
+          "total_players": 1,
+          "timestamp": "20260410_215349",
+          "analysis_duration_frames": 506
+        }
+      },
+      "enhanced_stats": {
+        "player_77": {
+          "player_id": 77,
+          "max_speed_kmh": 0.0,
+          "avg_speed_kmh": 0.0,
+          "max_acceleration": 0.0,
+          "current_acceleration": 0.0,
+          "total_distance_m": 0.0,
+          "jump_count": 0,
+          "final_stamina_percentage": 100.0,
+          "speed_history": [],
+          "jumps_detected": []
+        }
+      },
+      "advanced_jump_stats": {}
+    }
+  ],
+  "all_selected_player_ids": [
+    6,
+    77
+  ]
+}

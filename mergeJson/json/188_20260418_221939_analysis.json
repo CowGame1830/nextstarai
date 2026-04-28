@@ -1,0 +1,80 @@
+{
+  "timestamp": "20260418_221939",
+  "input_video": "input_videos/188.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    5,
+    12
+  ],
+  "player_stats": {
+    "player_5": {
+      "total_distance_m": 85.34217155073934,
+      "max_speed_kmh": 27.41238821500799,
+      "avg_speed_kmh": 15.126113833173514,
+      "sprint_speed_kmh": 27.41238821500799,
+      "max_acceleration": 3.080012151533452,
+      "jump_count": 2,
+      "stamina_percentage": 76.80000000000132,
+      "sprint_time_seconds": 4.583333333333331,
+      "total_sprint_distance_m": 29.6107287713755,
+      "total_frames_tracked": 478,
+      "current_acceleration": -1.6541255026825588,
+      "speed_history": [
+        18.281093167621073,
+        15.883107557880894,
+        15.83194391693456,
+        15.959951668263686,
+        19.43530714279276,
+        24.145154050216078,
+        19.245626820880478,
+        15.45695623648675,
+        14.165668402528633,
+        13.493191622200198
+      ]
+    },
+    "player_12": {
+      "total_distance_m": 30.503656588560013,
+      "max_speed_kmh": 20.37338168135734,
+      "avg_speed_kmh": 5.691856531669788,
+      "sprint_speed_kmh": 20.37338168135734,
+      "max_acceleration": 3.0799446840016564,
+      "jump_count": 0,
+      "stamina_percentage": 97.50000000000014,
+      "sprint_time_seconds": 0.20833333333333331,
+      "total_sprint_distance_m": 1.1790151435970682,
+      "total_frames_tracked": 442,
+      "current_acceleration": 1.4354294272283754,
+      "speed_history": [
+        12.902104287149585,
+        11.794517295652577,
+        10.660085312252406,
+        9.472687743628201,
+        10.28764739768165,
+        9.410618524243493,
+        17.165576009180867,
+        14.022571711263927,
+        12.1859677059401,
+        15.1019959021681
+      ]
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 480
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "188",
+  "input_video_name": "188.mp4",
+  "output_video": "output_videos\\188_20260418_221939_output.avi",
+  "analysis_file": "output_data\\188_20260418_221939_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        5,
+        12
+      ],
+      "selected_frame_index": 25
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "timestamp": "20260415_235155",
+  "input_video": "input_videos/13.mp4",
+  "total_detected_players": 3,
+  "detected_player_ids": [
+    14,
+    20,
+    14
+  ],
+  "player_stats": {
+    "player_14": {
+      "total_distance_m": 78.34423525815876,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "jump_count": 0,
+      "total_frames_tracked": 692,
+      "max_speed_kmh": 18.73639554308574,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.1798305574666186,
+      "avg_speed_kmh": 9.484401934846833,
+      "stamina_percentage": 92.50000000000043,
+      "current_acceleration": -0.9501834710089908,
+      "speed_history": [
+        8.806527637907944,
+        7.484132575278061,
+        12.428978472347845,
+        9.530006503434015,
+        14.61257016265154,
+        13.374603047141237,
+        15.45967336904172,
+        12.49840917265625,
+        13.398222663680905,
+        12.092865885547786,
+        9.208881748852122,
+        8.128025300949558,
+        11.05661108827858,
+        8.260796974010448,
+        13.733769678493012,
+        12.126198364360267,
+        14.90160979974159,
+        12.479394130524607,
+        13.756133393793847,
+        11.379224500630784
+      ]
+    },
+    "player_20": {
+      "total_distance_m": 41.95446523508008,
+      "max_speed_kmh": 19.42341732873816,
+      "avg_speed_kmh": 8.294543737012594,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.0734874821567244,
+      "jump_count": 0,
+      "stamina_percentage": 96.75000000000018,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 424,
+      "current_acceleration": -0.014955911401251354,
+      "speed_history": [
+        7.425289371919229,
+        6.719962689000428,
+        9.9985510734849,
+        8.245782004418864,
+        13.848993133418107,
+        11.392365612869675,
+        14.896534813821347,
+        13.014268281267622,
+        14.373247043098601,
+        13.738087351229703
+      ]
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 480
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "13",
+  "input_video_name": "13.mp4",
+  "output_video": "output_videos\\13\\13_20260415_235155_output.avi",
+  "analysis_file": "output_data\\13\\13_20260415_235155_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        14,
+        20,
+        14
+      ],
+      "selected_frame_index": 266
+    }
+  ]
+}

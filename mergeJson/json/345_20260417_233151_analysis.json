@@ -1,0 +1,73 @@
+{
+  "timestamp": "20260417_233151",
+  "input_video": "input_videos/345.mp4",
+  "total_detected_players": 2,
+  "detected_player_ids": [
+    2,
+    14
+  ],
+  "player_stats": {
+    "player_2": {
+      "total_distance_m": 41.97226224747981,
+      "max_speed_kmh": 17.016646616315473,
+      "avg_speed_kmh": 7.374026789384687,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 3.0792647647183324,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 480,
+      "current_acceleration": -0.33025052317638987,
+      "speed_history": [
+        13.939633296221006,
+        14.420204753360192,
+        12.191217007633668,
+        14.97680683112923,
+        13.96358735021552,
+        12.618020377830609,
+        12.165015365262098,
+        12.21888739481048,
+        10.397666351201693,
+        10.662379328757162
+      ]
+    },
+    "player_14": {
+      "total_distance_m": 1.6417941631042665,
+      "max_speed_kmh": 6.850089175598153,
+      "avg_speed_kmh": 3.4037253580615294,
+      "sprint_speed_kmh": 0.0,
+      "max_acceleration": 2.903614654072651,
+      "jump_count": 0,
+      "stamina_percentage": 100.0,
+      "sprint_time_seconds": 0.0,
+      "total_sprint_distance_m": 0.0,
+      "total_frames_tracked": 25,
+      "current_acceleration": 1.5129891468012533,
+      "speed_history": [
+        4.470079181993799,
+        4.328440597596064,
+        6.850089175598153
+      ]
+    },
+    "match_summary": {
+      "total_players": 2,
+      "analysis_duration_frames": 480
+    }
+  },
+  "advanced_jump_stats": {},
+  "video_stem": "345",
+  "input_video_name": "345.mp4",
+  "output_video": "output_videos\\345_20260417_233151_output.avi",
+  "analysis_file": "output_data\\345_20260417_233151_analysis.json",
+  "selection_history": [
+    {
+      "stage": "initial",
+      "selected_player_ids": [
+        2,
+        14
+      ],
+      "selected_frame_index": 0
+    }
+  ]
+}
