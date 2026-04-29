@@ -6,8 +6,8 @@
       "attributes": {
         "pace": 138,
         "acceleration": 141,
-        "work_rate": 188,
-        "stamina": 116
+        "work_rate": 141,
+        "stamina": 136
       },
       "raw_stats": {
         "max_speed_kmh": 31.19740031182502,
@@ -256,8 +256,8 @@
       "attributes": {
         "pace": 157,
         "acceleration": 142,
-        "work_rate": 198,
-        "stamina": 191
+        "work_rate": 147,
+        "stamina": 167
       },
       "raw_stats": {
         "max_speed_kmh": 33.09096499991148,
@@ -564,8 +564,8 @@
       "attributes": {
         "pace": 137,
         "acceleration": 141,
-        "work_rate": 193,
-        "stamina": 138
+        "work_rate": 143,
+        "stamina": 148
       },
       "raw_stats": {
         "max_speed_kmh": 31.054599895339237,

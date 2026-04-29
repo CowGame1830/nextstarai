@@ -92,33 +92,37 @@ def derive_stats(player_data: dict) -> dict:
     burst_frequency = 0.0
     
     if len(speed_history) > 0:
-        active_seconds = len(speed_history) / FPS
+        # Use total_seconds calculated from total_frames_tracked to avoid errors with downsampled history
+        duration_minutes = total_seconds / 60.0
         
-        # 1. Jogging % (> 7 km/h)
+        # 1. Jogging % (> 7 km/h) - Continuity
         jog_frames = len([s for s in speed_history if s > 7.0])
         jogging_percentage = jog_frames / len(speed_history)
         
-        # 2. Burst Frequency (Starts per minute)
+        # 2. HIR % (> 19.8 km/h)
+        hir_frames = len([s for s in speed_history if s > 19.8])
+        hir_percentage = hir_frames / len(speed_history)
+        
+        # 3. Burst Frequency (Starts per minute)
+        # We detect "significant actions" where speed crosses a high intensity threshold
         bursts = 0
         in_burst = False
-        burst_duration = 0
         for s in speed_history:
-            if s >= 15.0:
-                burst_duration += 1
-                if not in_burst and burst_duration >= 10:
+            if s >= 19.8: # High Intensity Running threshold (Bradley et al.)
+                if not in_burst:
                     bursts += 1
                     in_burst = True
-            else:
+            elif s < 15.0: # Must drop below 15 to reset the burst
                 in_burst = False
-                burst_duration = 0
         
-        burst_frequency = bursts / (active_seconds / 60.0) if active_seconds > 0 else 0.0
+        burst_frequency = bursts / duration_minutes if duration_minutes > 0 else 0.0
 
     return {
         "max_speed_kmh":          clean_max,
         "max_acceleration_enhanced": player_data.get("max_acceleration", 0.0),
         "avg_speed_kmh":          player_data.get("avg_speed_kmh", 0.0),
         "sprint_percentage":      sprint_pct,
+        "hir_percentage":         hir_percentage if len(speed_history) > 0 else 0.0,
         "stamina_percentage":     player_data.get("stamina_percentage", 0.0),
         "decay_rate":             decay_rate,
         "jogging_percentage":     jogging_percentage,
@@ -159,7 +163,7 @@ def main() -> None:
         pace = calculate_pace(stats["max_speed_kmh"])
         acc  = calculate_acceleration(stats["max_acceleration_enhanced"])
         wr   = calculate_work_rate(stats["avg_speed_kmh"], stats["jogging_percentage"], stats["burst_frequency"])
-        stam = calculate_stamina(stats["avg_speed_kmh"], stats["sprint_percentage"], stats["decay_rate"])
+        stam = calculate_stamina(stats["sprint_percentage"], stats["hir_percentage"], stats["decay_rate"])
 
         clips_count = len(stats["clips_appeared"])
 

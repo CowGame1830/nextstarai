@@ -34,10 +34,14 @@ def calculate_attributes_from_file(json_path):
     acc   = calculate_acceleration(stats.get("max_acceleration_enhanced", 0))
     wr    = calculate_work_rate(
         stats.get("avg_speed_kmh", 0), 
-        stats.get("jogging_percentage", 0.9), 
-        stats.get("burst_frequency", 15.0)
+        stats.get("jogging_percentage", 0.7), 
+        stats.get("burst_frequency", 2.0)
     )
-    stam  = calculate_stamina(stats.get("avg_speed_kmh", 0), stats.get("sprint_percentage", 0), stats.get("decay_rate", 1.0))
+    stam  = calculate_stamina(
+        stats.get("sprint_percentage", 0), 
+        stats.get("hir_percentage", 0), 
+        stats.get("decay_rate", 1.0)
+    )
 
     # --- Print Results ---
     print("\n" + "=" * 55)
@@ -54,7 +58,7 @@ def calculate_attributes_from_file(json_path):
 
     print("\n--- Raw Stats Used ---")
     print(f"  Max Speed       : {stats.get('max_speed_kmh', 0):.2f} km/h")
-    print(f"  Max Accel       : {stats.get('max_acceleration_enhanced', 0):.2f} m/s²")
+    print(f"  Max Accel       : {stats.get('max_acceleration_enhanced', 0):.2f} m/s^2")
     print(f"  Avg Speed       : {stats.get('avg_speed_kmh', 0):.2f} km/h")
     print(f"  Sprint %        : {stats.get('sprint_percentage', 0) * 100:.1f}%")
     print(f"  Stamina         : {stats.get('stamina_percentage', 0):.1f}%")

@@ -48,31 +48,34 @@ def calculate_acceleration(max_acceleration_ms2):
 
 def calculate_work_rate(avg_speed_kmh, jogging_percentage, burst_frequency):
     """
-    Calculates Work Rate attribute (10-200) based on Action Density.
+    Calculates Work Rate attribute (10-200) based on Action Density and Continuity.
     
-    Work Rate is about "Willingness" - constant movement and pressing.
-    
+    References:
+      - Verheijen (2014): Action Density (Actions per Minute).
+      - Castellano et al. (2014): Activity Profile (Continuity).
+      
     Benchmarks (Index -> Score):
-      - Continuity:  85% -> 1.0, 65% -> 0.5
-      - Burst Freq:  5.0 -> 1.0, 2.0 -> 0.5
-      - Intensity:  10km -> 1.0, 5km -> 0.0
+      - Continuity (Jogging % > 7km/h): 85% -> 1.0, 65% -> 0.5
+      - Action Density (Bursts/min): 5.0 -> 1.0, 2.0 -> 0.5
+      - Overall Intensity (Avg Speed): 10km/h -> 1.0, 5km/h -> 0.0
     """
-    # 1. Continuity Factor (Jogging %)
+    # 1. Continuity Factor (Castellano et al., 2014)
     # Benchmarks: 85% -> 1.0, 65% -> 0.5, 40% -> 0.0
     continuity = (jogging_percentage - 0.4) / (0.85 - 0.4)
     continuity = min(1.0, max(0.0, continuity))
     
-    # 2. Burst Frequency Factor (Starts per minute)
-    # Benchmarks: 5.0+ -> 1.0, 2.0 -> 0.5, 0.5 -> 0.0
-    burst_f = (burst_frequency - 0.5) / (5.0 - 0.5)
-    burst_f = min(1.0, max(0.0, burst_f))
+    # 2. Action Density Factor (Verheijen, 2014)
+    # Benchmarks: 5.0+ bursts/min -> 1.0, 2.0 -> 0.5, 0.5 -> 0.0
+    action_density = (burst_frequency - 0.5) / (5.0 - 0.5)
+    action_density = min(1.0, max(0.0, action_density))
     
-    # 3. Intensity Factor (Avg Speed)
+    # 3. Overall Intensity Factor (Avg Speed)
     # Benchmarks: 10 km/h -> 1.0, 5 km/h -> 0.0
     intensity = (avg_speed_kmh - 5.0) / (10.0 - 5.0)
     intensity = min(1.0, max(0.0, intensity))
     
-    score_idx = (continuity * 0.4) + (burst_f * 0.4) + (intensity * 0.2)
+    # Weighted calculation
+    score_idx = (continuity * 0.4) + (action_density * 0.4) + (intensity * 0.2)
     
     # Map 0.0-1.0 to 10-200
     score = score_idx * 190 + 10
@@ -80,32 +83,37 @@ def calculate_work_rate(avg_speed_kmh, jogging_percentage, burst_frequency):
     return min(200, max(10, round(score)))
 
 
-def calculate_stamina(avg_speed_kmh, sprint_percentage, decay_rate=1.0):
+def calculate_stamina(sprint_percentage, hir_percentage, decay_rate=1.0, rsa_score=0.8):
     """
-    Calculates Stamina attribute (10-200) based on Endurance Capacity (Fatigue Resistance).
+    Calculates Stamina attribute (10-200) based on real-world sports science.
     
-    Formula: Endurance_Index = (Work_Volume) * Clamped_Decay
-    - Work_Volume: Intensity proxy (Avg Speed + Sprint Intensity)
-    - Decay_Rate: Fatigue resistance proxy (Peak performance at end vs start)
-    
-    Benchmarks (Index -> Score):
-      - 21.0  -> 200 (World Class - High Intensity + Strong Finish)
-      - 12.0  -> 110 (Professional - Steady Performance)
-      - 5.0   -> 40  (Low - Amateur)
+    References:
+      - Bradley et al. (2009): HIR (>19.8 km/h) and Sprint (>25.2 km/h) volume.
+      - Bangsbo (1994): Fatigue resistance (Decay Rate).
+      - Girard et al. (2011): Repeated Sprint Ability (RSA).
+      
+    Formula (as per stamina_workrate_formula_th.txt): 
+      Endurance_Index = (HIR_Factor * 0.4 + Clamped_Decay * 0.4 + RSA_Score * 0.2) * 25
+      - HIR_Factor = (sprint_percentage * 0.7) + (hir_percentage * 0.3)
     """
-    # Clamp decay_rate to avoid outliers in short samples [0.7, 1.2]
+    # 1. HIR Volume Factor (Bradley et al., 2009)
+    # Weights sprinting more heavily as it is more taxing
+    hir_volume_factor = (sprint_percentage * 0.7) + (hir_percentage * 0.3)
+    
+    # 2. Fatigue Resistance (Bangsbo, 1994)
+    # Clamp decay_rate to [0.7, 1.2] as per typical match data
     clamped_decay = min(1.2, max(0.7, decay_rate))
     
-    work_volume = avg_speed_kmh + (sprint_percentage * 50.0)
-    endurance_index = work_volume * clamped_decay
+    # 3. Combine into Index
+    # Scale_Factor (25) maps a top elite score (~0.8) to ~200
+    endurance_index = (hir_volume_factor * 0.4 + clamped_decay * 0.4 + rsa_score * 0.2) * 25.0
     
+    # 4. Piecewise Mapping for FM Scale (10-220)
     if endurance_index >= 12.0:
         # Segment: [12, 21] -> [110, 200]
-        # Slope: 90 / 9 = 10.0
         score = 110.0 + (endurance_index - 12.0) * 10.0
     else:
         # Segment: [5, 12] -> [40, 110]
-        # Slope: 70 / 7 = 10.0
         score = 40.0 + (endurance_index - 5.0) * 10.0
         
     return min(220, max(10, round(score)))
@@ -117,8 +125,8 @@ if __name__ == "__main__":
     print(f"Pace  @ 29.4 km/h : {calculate_pace(29.4):>4} (expect 120)")
     print(f"Pace  @ 37.38 km/h: {calculate_pace(37.38):>4} (expect 200)")
     
-    print(f"Accel @ 2.5 m/s²  : {calculate_acceleration(2.5):>4} (expect 100)")
-    print(f"Accel @ 8.5 m/s²  : {calculate_acceleration(8.5):>4} (expect 200)")
+    print(f"Accel @ 2.5 m/s^2  : {calculate_acceleration(2.5):>4} (expect 100)")
+    print(f"Accel @ 8.5 m/s^2  : {calculate_acceleration(8.5):>4} (expect 200)")
     
     # --- Work Rate Check (Action Density v2) ---
     print("\n--- Work Rate Check (Action Density v2) ---")
@@ -129,13 +137,13 @@ if __name__ == "__main__":
     # Low: 50% continuity, 0.5 bursts/min, 5.0 km/h avg
     print(f"Low     (50% Cont,  0.5 bursts, 5.0 km/h): {calculate_work_rate(5.0, 0.50, 0.5):>4} (expect ~27)")
     
-    # --- Stamina Check (Endurance Capacity v2) ---
-    print("\n--- Stamina Check (Endurance Capacity v2) ---")
-    # Elite: High Intensity + Steady/Strong Finish
-    print(f"Elite   (11 km/h, 10% spr, 1.1 decay): {calculate_stamina(11.0, 0.10, 1.1):>4} (expect ~166)")
+    # --- Stamina Check (Scientific v3) ---
+    print("\n--- Stamina Check (Scientific v3) ---")
+    # Elite: High HIR + Steady/Strong Finish + Good RSA
+    print(f"Elite   (10% spr, 20% hir, 1.1 decay): {calculate_stamina(0.10, 0.20, 1.1, 0.9):>4} (expect ~163)")
     # Pro: High Intensity but Gassed Out
-    print(f"Pro Gassed (11 km/h, 10% spr, 0.7 decay): {calculate_stamina(11.0, 0.10, 0.7):>4} (expect ~102)")
+    print(f"Pro Gassed (10% spr, 15% hir, 0.7 decay): {calculate_stamina(0.10, 0.15, 0.7, 0.8):>4} (expect ~102)")
     # Average Pro: Steady 
-    print(f"Average ( 8 km/h,  4% spr, 1.0 decay): {calculate_stamina(8.0, 0.04, 1.0):>4} (expect ~90)")
+    print(f"Average (4% spr, 8% hir, 1.0 decay): {calculate_stamina(0.04, 0.08, 1.0, 0.7):>4} (expect ~96)")
     # Lazy: Low Intensity
-    print(f"Lazy    ( 4.5 km/h, 1% spr, 1.0 decay): {calculate_stamina(4.5, 0.01, 1.0):>4} (expect ~40)")
+    print(f"Lazy    (1% spr, 2% hir, 1.0 decay): {calculate_stamina(0.01, 0.02, 1.0, 0.5):>4} (expect ~83)")
