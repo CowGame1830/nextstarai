@@ -66,7 +66,7 @@ def derive_stats(player_data: dict) -> dict:
     # Filter max speed using speed_history (99.5th percentile)
     # -----------------------------------------------------------------------
     if speed_history and len(speed_history) >= 10:
-        clean_max = get_percentile(speed_history, 99.5)
+        clean_max = get_percentile(speed_history, 99)
     else:
         clean_max = raw_max
 

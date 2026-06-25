@@ -85,37 +85,39 @@ def calculate_work_rate(avg_speed_kmh, jogging_percentage, burst_frequency):
 
 def calculate_stamina(sprint_percentage, hir_percentage, decay_rate=1.0, rsa_score=0.8):
     """
-    Calculates Stamina attribute (10-200) based on real-world sports science.
+    Calculates Stamina attribute (10-200) using the Intensity-Sustainability (IS) Model.
     
-    References:
-      - Bradley et al. (2009): HIR (>19.8 km/h) and Sprint (>25.2 km/h) volume.
-      - Bangsbo (1994): Fatigue resistance (Decay Rate).
-      - Girard et al. (2011): Repeated Sprint Ability (RSA).
+    Philosophy:
+      Stamina = (Intensity Capacity) x (Sustainability Factor)
+      This represents the player's ability to maintain their demonstrated 
+      peak intensity over the observation window.
       
-    Formula (as per stamina_workrate_formula_th.txt): 
-      Endurance_Index = (HIR_Factor * 0.4 + Clamped_Decay * 0.4 + RSA_Score * 0.2) * 25
-      - HIR_Factor = (sprint_percentage * 0.7) + (hir_percentage * 0.3)
+    Components:
+      - Intensity Capacity (IC): Weighted HIR and Sprint density.
+      - Sustainability Factor (SF): Fatigue resistance derived from performance decay.
     """
-    # 1. HIR Volume Factor (Bradley et al., 2009)
-    # Weights sprinting more heavily as it is more taxing
-    hir_volume_factor = (sprint_percentage * 0.7) + (hir_percentage * 0.3)
+    # 1. Intensity Capacity (IC)
+    # Measures the density of high-intensity efforts.
+    ic = (sprint_percentage * 0.7) + (hir_percentage * 0.3)
     
-    # 2. Fatigue Resistance (Bangsbo, 1994)
-    # Clamp decay_rate to [0.7, 1.2] as per typical match data
-    clamped_decay = min(1.2, max(0.7, decay_rate))
+    # 2. Sustainability Factor (SF)
+    # Measures how well peak performance was maintained (Bangsbo, 1994).
+    # Range [0.4, 1.05]. 1.0 = Perfect maintenance.
+    sf = min(1.05, max(0.4, decay_rate))
     
-    # 3. Combine into Index
-    # Scale_Factor (25) maps a top elite score (~0.8) to ~200
-    endurance_index = (hir_volume_factor * 0.4 + clamped_decay * 0.4 + rsa_score * 0.2) * 25.0
+    # 3. Interaction Index (Endurance Index)
+    # Multiplicative interaction + small RSA additive component.
+    # Theoretical Elite Peak (Highlight) ~ 0.40
+    # Theoretical Standard Pro (Highlight) ~ 0.25
+    endurance_index = (ic * sf) + (rsa_score * 0.2)
     
-    # 4. Piecewise Mapping for FM Scale (10-220)
-    if endurance_index >= 12.0:
-        # Segment: [12, 21] -> [110, 200]
-        score = 110.0 + (endurance_index - 12.0) * 10.0
-    else:
-        # Segment: [5, 12] -> [40, 110]
-        score = 40.0 + (endurance_index - 5.0) * 10.0
-        
+    # 4. Scientific Linear Mapping
+    # Based on Theoretical Anchors for the tracking environment.
+    # Anchor 1: Index 0.40 -> 200 (Elite Engine)
+    # Anchor 2: Index 0.25 -> 120 (Standard Pro)
+    # Slope: (200 - 120) / (0.40 - 0.25) = 80 / 0.15 = 533.33
+    score = 120.0 + (endurance_index - 0.25) * 533.33
+    
     return min(220, max(10, round(score)))
 
 

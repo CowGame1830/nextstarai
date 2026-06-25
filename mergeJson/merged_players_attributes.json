@@ -4,13 +4,13 @@
   "players": {
     "player_5": {
       "attributes": {
-        "pace": 138,
+        "pace": 128,
         "acceleration": 141,
         "work_rate": 141,
-        "stamina": 136
+        "stamina": 135
       },
       "raw_stats": {
-        "max_speed_kmh": 31.19740031182502,
+        "max_speed_kmh": 30.20824150299412,
         "max_acceleration": 4.53375,
         "avg_speed_kmh": 8.378215243775937,
         "sprint_percentage": 10.38,
@@ -254,13 +254,13 @@
     },
     "player_14": {
       "attributes": {
-        "pace": 157,
+        "pace": 143,
         "acceleration": 142,
         "work_rate": 147,
-        "stamina": 167
+        "stamina": 170
       },
       "raw_stats": {
-        "max_speed_kmh": 33.09096499991148,
+        "max_speed_kmh": 31.733870745583097,
         "max_acceleration": 4.614715873828126,
         "avg_speed_kmh": 9.708171401819214,
         "sprint_percentage": 14.06,
@@ -562,13 +562,13 @@
     },
     "player_20": {
       "attributes": {
-        "pace": 137,
+        "pace": 125,
         "acceleration": 141,
         "work_rate": 143,
-        "stamina": 148
+        "stamina": 144
       },
       "raw_stats": {
-        "max_speed_kmh": 31.054599895339237,
+        "max_speed_kmh": 29.89089887848776,
         "max_acceleration": 4.53375,
         "avg_speed_kmh": 9.099003872592347,
         "sprint_percentage": 10.05,
