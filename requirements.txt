@@ -12,7 +12,6 @@ ultralytics==8.4.21
 # Computer vision and tracking
 opencv-python==4.8.1.78
 supervision==0.27.0.post1
-mediapipe==0.10.32
 
 # Data processing and analytics
 numpy<2
