@@ -1,2 +1,5 @@
 *__pycahce__*
 *.pyc
+input_videos/*
+output_data/*
+output_videos/*

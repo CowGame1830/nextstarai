@@ -28,3 +28,95 @@ To run this project, you need to have the following requirements installed:
 - NumPy
 - Matplotlib
 - Pandas
+
+## Model Benchmark (Model 1 Performance Test)
+Use `benchmark_model.py` to test if model 1 works reliably on real match clips (for example, Wolves team clips).
+
+Quick benchmark on a video:
+
+```bash
+python benchmark_model.py --model models/clean_label.pt --video input_videos/10secVideo.mp4
+```
+
+Quick smoke test (first 200 frames only):
+
+```bash
+python benchmark_model.py --model models/clean_label.pt --video input_videos/10secVideo.mp4 --max-frames 200
+```
+
+Benchmark with labeled validation set (`data.yaml`) for mAP:
+
+```bash
+python benchmark_model.py --model models/clean_label.pt --video input_videos/10secVideo.mp4 --data path/to/data.yaml
+```
+
+The script saves a JSON report in `output_data/` with:
+- Inference FPS and milliseconds per frame
+- Total detections and detections per frame
+- Per-class detection confidence and frame presence ratio
+- Optional mAP50/mAP50-95 when a validation set is provided
+
+## Select One Target Player (Interactive)
+You can run the full pipeline but analyze/export only one selected player.
+
+Interactive mode (click player bbox, then press Enter):
+
+```bash
+python main.py --select-target
+```
+
+Interactive mode on a specific frame index:
+
+```bash
+python main.py --select-target --target-frame 120
+```
+
+Manual mode without click (known stable id):
+
+```bash
+python main.py --players 10
+```
+
+Notes:
+- `--select-target` uses stabilized player IDs, so the selected player is tracked consistently across the whole video.
+- If OpenCV GUI is not available in your environment, use `--players` with a known ID.
+
+## Runtime Optimization Options
+Run the main pipeline with custom input/model paths:
+
+```bash
+python main.py --video input_videos/5.mp4 --model models/clean_label.pt
+```
+
+You can combine with target-selection mode:
+
+```bash
+python main.py --video input_videos/5.mp4 --model models/clean_label.pt --select-target
+```
+
+Performance notes:
+- Tracker now uses stronger matching settings to reduce ID switches during occlusion/crossing.
+- Output JSON writing will automatically use `orjson` (if installed) for faster export.
+
+## Batch Processing Multiple Videos
+You can process many videos in one run with `--videos`.
+
+Example:
+
+```bash
+python main.py --videos input_videos/1.mp4 input_videos/2.mp4 input_videos/3.mp4
+```
+
+If you have a long list, you can pass 30 paths the same way. Each video is processed independently and writes its own outputs under:
+
+- `output_videos/`
+- `output_data/`
+
+Output files are named with the input video name and timestamp, for example:
+
+- `<video_name>_<timestamp>_output.avi`
+- `<video_name>_<timestamp>_analysis.json`
+- `<video_name>_player_stats_<timestamp>.json`
+- `<video_name>_enhanced_player_stats_<timestamp>.json`
+
+This removes the old checkpoint video naming and makes it easier to match every output back to its source video.
