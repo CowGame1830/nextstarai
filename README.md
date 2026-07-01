@@ -54,19 +54,19 @@ Use `benchmark_model.py` to test if model 1 works reliably on real match clips (
 Quick benchmark on a video:
 
 ```bash
-python benchmark_model.py --model models/clean_label.pt --video input_videos/10secVideo.mp4
+python benchmark_model.py --model models/clean_label.pt --video input_videos/8.mp4
 ```
 
 Quick smoke test (first 200 frames only):
 
 ```bash
-python benchmark_model.py --model models/clean_label.pt --video input_videos/10secVideo.mp4 --max-frames 200
+python benchmark_model.py --model models/clean_label.pt --video input_videos/8.mp4 --max-frames 200
 ```
 
 Benchmark with labeled validation set (`data.yaml`) for mAP:
 
 ```bash
-python benchmark_model.py --model models/clean_label.pt --video input_videos/10secVideo.mp4 --data path/to/data.yaml
+python benchmark_model.py --model models/clean_label.pt --video input_videos/8.mp4 --data path/to/data.yaml
 ```
 
 The script saves a JSON report in `output_data/` with:
