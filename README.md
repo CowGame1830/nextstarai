@@ -19,15 +19,34 @@ The following modules are used in this project:
 ## Sample video
 -  [Sample input video](https://drive.google.com/file/d/1t6agoqggZKx6thamUuPAIdN_1zR9v9S_/view?usp=sharing)
 
-## Requirements
-To run this project, you need to have the following requirements installed:
-- Python 3.x
-- ultralytics
-- supervision
-- OpenCV
-- NumPy
-- Matplotlib
-- Pandas
+## Installation & Setup
+
+Follow these steps to set up the project locally:
+
+1. **Clone the Repository:**
+   ```bash
+   git clone https://github.com/CowGame1830/nextstarai.git
+   cd nextstarai
+   ```
+
+2. **Set up a Virtual Environment (Optional but recommended):**
+   * **Windows:**
+     ```bash
+     python -m venv venv
+     .\venv\Scripts\activate
+     ```
+   * **macOS / Linux:**
+     ```bash
+     python -m venv venv
+     source venv/bin/activate
+     ```
+
+3. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+*(Note: Recommended Python version is 3.13.x. The requirements file is configured to install PyTorch CPU version to ensure fast inference setup on CPU. If you have a compatible NVIDIA GPU, you may want to install PyTorch with CUDA support instead.)*
 
 ## Model Benchmark (Model 1 Performance Test)
 Use `benchmark_model.py` to test if model 1 works reliably on real match clips (for example, Wolves team clips).
